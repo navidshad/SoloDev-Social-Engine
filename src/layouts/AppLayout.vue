@@ -38,7 +38,7 @@ const handleMenuClick = (item: any, closeSidebar: () => void) => {
 </script>
 
 <template>
-	<DashboardShell brandTitle="SoloDev Social" brand-logo="" menuStyle="vertical" :hideMenu="false">
+	<DashboardShell brandTitle="SoloDev Social" brand-logo="/logo.png" menuStyle="vertical" :hideMenu="false">
 		<template #header>
 			<div class="flex justify-end">
 				<Button variant="destructive" @click="handleLogout">
@@ -48,7 +48,8 @@ const handleMenuClick = (item: any, closeSidebar: () => void) => {
 		</template>
 
 		<template #sidebar-menu="{ closeSidebar }">
-			<SidebarMenu :items="menuItems" @itemClick="(item) => handleMenuClick(item, closeSidebar)" />
+			<SidebarMenu brand-logo="/logo.png" :items="menuItems"
+				@itemClick="(item) => handleMenuClick(item, closeSidebar)" />
 		</template>
 
 		<template #content>
