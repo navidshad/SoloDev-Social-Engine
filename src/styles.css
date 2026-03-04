@@ -1,0 +1,4 @@
+@import "tailwindcss";
+
+/* Allow Tailwind classes from PilotUI to work in dark mode */
+@custom-variant dark (&:where(.dark, .dark *));

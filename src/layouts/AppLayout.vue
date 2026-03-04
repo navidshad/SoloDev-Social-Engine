@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { DashboardShell, SidebarMenu } from 'pilotui/shell'
+import { DashboardShell, SidebarMenu, Button } from 'pilotui'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
@@ -28,20 +28,29 @@ const handleLogout = async () => {
 	await authStore.logout()
 	router.push('/login')
 }
+
+const handleMenuClick = (item: any, closeSidebar: () => void) => {
+	if (item.to) {
+		router.push(item.to)
+		closeSidebar()
+	}
+}
 </script>
 
 <template>
-	<DashboardShell brandTitle="SoloDev Social" menuStyle="vertical" :hideMenu="false">
-		<template #sidebar-menu="{ closeSidebar }">
-			<SidebarMenu :items="menuItems" @itemClick="closeSidebar" />
-			<div class="mt-4 px-4">
-				<button
-					class="w-full flex items-center justify-center gap-2 p-2 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition"
-					@click="async () => { await handleLogout(); closeSidebar() }">
+	<DashboardShell brandTitle="SoloDev Social" brand-logo="" menuStyle="vertical" :hideMenu="false">
+		<template #header>
+			<div class="flex justify-end">
+				<Button variant="destructive" @click="handleLogout">
 					Logout
-				</button>
+				</Button>
 			</div>
 		</template>
+
+		<template #sidebar-menu="{ closeSidebar }">
+			<SidebarMenu :items="menuItems" @itemClick="(item) => handleMenuClick(item, closeSidebar)" />
+		</template>
+
 		<template #content>
 			<router-view />
 		</template>
