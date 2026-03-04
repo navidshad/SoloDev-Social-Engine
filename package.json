@@ -1,0 +1,70 @@
+{
+  "name": "solodev-social-engine",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "overrides": {
+    "pinia": "$pinia"
+  },
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "run-p type-check \"build-only {@}\" --",
+    "preview": "vite preview",
+    "build-only": "vite build",
+    "type-check": "vue-tsc --build",
+    "lint": "run-s lint:*",
+    "lint:oxlint": "oxlint . --fix",
+    "lint:eslint": "eslint . --fix --cache",
+    "format": "oxfmt src/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/navidshad/SoloDev-Social-Engine.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/navidshad/SoloDev-Social-Engine/issues"
+  },
+  "homepage": "https://github.com/navidshad/SoloDev-Social-Engine#readme",
+  "dependencies": {
+    "autoprefixer": "^10.4.27",
+    "firebase": "^12.10.0",
+    "font-awesome": "^4.7.0",
+    "lucide": "^0.577.0",
+    "lucide-vue-next": "^0.577.0",
+    "octokit": "^5.0.5",
+    "pilotui": "^1.29.0",
+    "pinia": "^3.0.4",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^4.2.1",
+    "vue": "^3.5.29",
+    "vue-router": "^5.0.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.1",
+    "@tailwindcss/vite": "^4.2.1",
+    "@tsconfig/node24": "^24.0.4",
+    "@types/node": "^24.11.0",
+    "@vitejs/plugin-vue": "^6.0.4",
+    "@vue/eslint-config-typescript": "^14.7.0",
+    "@vue/tsconfig": "^0.8.1",
+    "eslint": "^10.0.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-oxlint": "~1.50.0",
+    "eslint-plugin-vue": "~10.8.0",
+    "jiti": "^2.6.1",
+    "npm-run-all2": "^8.0.4",
+    "oxfmt": "^0.35.0",
+    "oxlint": "~1.50.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vite-plugin-vue-devtools": "^8.0.6",
+    "vue-tsc": "^3.2.5"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  }
+}
