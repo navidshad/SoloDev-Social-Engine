@@ -63,7 +63,8 @@ Triggered by `Firebase Cloud Functions` via GitHub Webhooks.
 
 This stack is chosen specifically for a solo developer because it is virtually zero-maintenance and will likely operate entirely within Google Cloud/Firebase's free tiers.
 
-- **Frontend UI:** `TS-Vue (Vite) + Tailwind CSS` — Fast to build, easy to make look clean and professional.
+- **Frontend UI:** `TS-Vue (Vite) + Tailwind CSS + PilotUI` — Fast to build, easy to make look clean and professional.
+- **UI Framework:** `PilotUI` — there is an skill for it.
 - **Hosting:** `Firebase Hosting` — Free tier is generous; deploys with a single CLI command.
 - **Backend Orchestration:** `Firebase Cloud Functions (Node.js)` — Serverless. No VPS to patch. Scales to zero.
 - **Database:** `Cloud Firestore` — Real-time syncing for the Drafts dashboard.
