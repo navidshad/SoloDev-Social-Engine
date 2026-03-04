@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { getAuth, signInWithPopup, GithubAuthProvider, signOut, onAuthStateChanged, type User } from 'firebase/auth'
+import { getAuth, signInWithPopup, GoogleAuthProvider, GithubAuthProvider, linkWithPopup, signOut, onAuthStateChanged, type User } from 'firebase/auth'
 import { app } from '../firebase/config'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -14,14 +14,25 @@ export const useAuthStore = defineStore('auth', () => {
 		loading.value = false
 	})
 
-	async function loginWithGithub() {
+	async function loginWithGoogle() {
 		try {
-			const provider = new GithubAuthProvider()
-			// Optional: Add scopes if we need to access github API directly from frontend
-			// provider.addScope('repo')
+			const provider = new GoogleAuthProvider()
 			await signInWithPopup(auth, provider)
 		} catch (error) {
-			console.error("Login failed:", error)
+			console.error("Google Login failed:", error)
+			throw error
+		}
+	}
+
+	async function connectGithub() {
+		if (!user.value) throw new Error("User must be logged in to connect GitHub")
+		try {
+			const provider = new GithubAuthProvider()
+			// Optional: Add scopes if we need to access github API directly
+			// provider.addScope('repo')
+			await linkWithPopup(user.value, provider)
+		} catch (error) {
+			console.error("GitHub Linking failed:", error)
 			throw error
 		}
 	}
@@ -37,7 +48,8 @@ export const useAuthStore = defineStore('auth', () => {
 	return {
 		user,
 		loading,
-		loginWithGithub,
+		loginWithGoogle,
+		connectGithub,
 		logout
 	}
 })
