@@ -23,9 +23,18 @@ const saveSettings = async () => {
 const handleConnectGithub = async () => {
 	try {
 		await authStore.connectGithub()
-		alert("GitHub account connected successfully!")
-	} catch (error) {
-		alert("Failed to connect GitHub account.")
+	} catch (error: any) {
+		console.error(error)
+		alert(error?.message ?? "Failed to connect GitHub account.")
+	}
+}
+
+const handleDisconnectGithub = async () => {
+	try {
+		await authStore.disconnectGithub()
+	} catch (error: any) {
+		console.error(error)
+		alert(error?.message ?? "Failed to disconnect GitHub account.")
 	}
 }
 </script>
@@ -50,10 +59,21 @@ const handleConnectGithub = async () => {
 						</svg>
 						<div>
 							<p class="font-medium dark:text-white">GitHub</p>
-							<p class="text-sm text-gray-500 dark:text-gray-400">Used to fetch repository releases</p>
+							<p v-if="authStore.isGithubConnected" class="text-sm text-green-500 font-medium">
+								✓ Connected{{ authStore.githubUsername ? ` as ${authStore.githubUsername}` : '' }}
+							</p>
+							<p v-else class="text-sm text-gray-500 dark:text-gray-400">Used to fetch repository releases
+							</p>
 						</div>
 					</div>
-					<Button variant="outline" size="sm" @click="handleConnectGithub">Connect</Button>
+					<div class="flex gap-2">
+						<Button v-if="authStore.isGithubConnected" variant="outline" size="sm"
+							:disabled="authStore.githubLoading" @click="handleDisconnectGithub">{{
+								authStore.githubLoading ? 'Disconnecting...' : 'Disconnect' }}</Button>
+						<Button v-else variant="outline" size="sm" :disabled="authStore.githubLoading"
+							@click="handleConnectGithub">{{ authStore.githubLoading ? 'Connecting...' : 'Connect'
+							}}</Button>
+					</div>
 				</div>
 			</div>
 		</Card>
