@@ -1,5 +1,16 @@
 import { GoogleGenAI } from "@google/genai";
 
+function stripMarkdown(text: string): string {
+	return text
+		.replace(/!\[.*?\]\(.*?\)/g, '') // Remove images
+		.replace(/\[(.*?)\]\(.*?\)/g, '$1') // Remove links but keep label
+		.replace(/(\*\*|__)(.*?)\1/g, '$2') // Remove bold
+		.replace(/(\*|_)(.*?)\1/g, '$2') // Remove italic
+		.replace(/`{1,3}.*?`{1,3}/g, '') // Remove code
+		.replace(/#+\s/g, '') // Remove headers
+		.trim();
+}
+
 
 export async function generateSocialPosts(
 	releaseNotes: string,
@@ -16,13 +27,10 @@ export async function generateSocialPosts(
 
 	const ai = new GoogleGenAI({ apiKey });
 
-	const systemContext = `You are a highly skilled developer writing social media posts for your personal brand.
-Your specific voice rules are:
-"${personaVoice}"
-
-Context:
-Repository: ${repoName}
+	const systemContext = `Repository: ${repoName}
 Version: ${version}
+
+CRITICAL: Output STRICTLY PLAIN TEXT. NO markdown, NO bold (**), NO italics (_), NO markdown image tags (![]()), NO links. LinkedIn and X do not support markdown. Just clean, raw text.
 `;
 
 	let xPromptContext = '';
@@ -74,8 +82,8 @@ Write a storytelling post (up to 3,000 characters). Expand on the problem this r
 		const extractedImage = imageMatch ? imageMatch[1] : null;
 
 		return {
-			xPost: xAppResponse.text,
-			linkedinPost: linkedinAppResponse.text,
+			xPost: stripMarkdown((xAppResponse as any).text || ""),
+			linkedinPost: stripMarkdown((linkedinAppResponse as any).text || ""),
 			extractedImage
 		};
 	} catch (error) {
@@ -116,7 +124,8 @@ Instructions:
 1. Rewrite the ${platformContext} following the User Request while maintaining the established Persona.
 2. Keep it under ${maxLength} characters.
 3. If the platform is X, ensure it has a strong hook.
-4. Output ONLY the new text for the post, with no other commentary.`;
+4. Output STRICTLY PLAIN TEXT. NO markdown, NO bold, NO italics, NO links, NO markdown image tags.
+5. Output ONLY the new text for the post, with no other commentary.`;
 
 	try {
 		const response = await ai.models.generateContent({
@@ -124,7 +133,7 @@ Instructions:
 			contents: refinementPrompt,
 		});
 
-		return response.text;
+		return stripMarkdown((response as any).text || "");
 	} catch (error) {
 		console.error(`Error refining ${platform} post with Gemini`, error);
 		throw error;

@@ -75,6 +75,7 @@ const checkRepoHistories = async (repoNames: string[]) => {
 		const q = query(
 			collection(db, `users/${authStore.user?.uid}/drafts`),
 			where('repoName', '==', repoName),
+			where('status', 'in', ['Draft', 'Published', 'Partially Published']),
 			limit(1)
 		)
 		const snap = await getDocs(q)

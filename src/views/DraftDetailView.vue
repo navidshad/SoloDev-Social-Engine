@@ -239,6 +239,21 @@ const discard = async () => {
 								</div>
 							</div>
 						</div>
+
+						<!-- Image Preview (Rendered Separately) -->
+						<div v-if="draft.extractedImage" class="px-4 pb-4 shrink-0">
+							<div
+								class="p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-100 dark:border-gray-700 flex items-center gap-4">
+								<div class="w-20 h-20 rounded bg-gray-200 dark:bg-gray-700 overflow-hidden flex-none">
+									<img :src="draft.extractedImage" class="w-full h-full object-cover" />
+								</div>
+								<div class="flex-1 min-w-0">
+									<p class="text-xs font-semibold text-gray-500 uppercase mb-1">Attached Media</p>
+									<p class="text-xs text-gray-400 truncate">{{ draft.extractedImage }}</p>
+								</div>
+								<Button variant="outline" size="sm" @click="draft.extractedImage = null">Remove</Button>
+							</div>
+						</div>
 					</Card>
 
 					<!-- AI Refinement Section -->
