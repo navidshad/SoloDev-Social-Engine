@@ -14,7 +14,6 @@ const db = getFirestore()
 const config = ref({
 	xApiKey: '',
 	linkedInToken: '',
-	githubWebhookSecret: '',
 	personaVoice: 'I write in a "build in public" style. I am humble but authoritative. I rarely use hashtags on X. I like to focus on the "why" behind the code. Use a conversational tone.',
 	autoPostEnabled: false,
 	geminiApiKey: ''
@@ -289,8 +288,6 @@ const handleDisconnectGithub = async () => {
 					<Input v-model="config.xApiKey" label="X (Twitter) API Key" placeholder="sk-..." type="password" />
 					<Input v-model="config.linkedInToken" label="LinkedIn OAuth Token" placeholder="AQV..."
 						type="password" />
-					<Input v-model="config.githubWebhookSecret" label="GitHub Webhook Secret"
-						placeholder="Your secret string" type="password" />
 					<Input v-model="config.geminiApiKey" label="Gemini API Key" placeholder="AI..." type="password" />
 				</div>
 			</div>
