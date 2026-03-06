@@ -3,21 +3,14 @@
  * @param postText The text content of the post.
  * @param imageUrl (Optional) The URL of the image to attach.
  * @param token The LinkedIn OAuth Access Token.
+ * @param urn The user's LinkedIn Person URN
  */
-export async function publishToLinkedIn(postText: string, imageUrl: string | null, token: string) {
+export async function publishToLinkedIn(postText: string, imageUrl: string | null, token: string, urn: string) {
 	console.log("Publishing to LinkedIn...");
 	try {
-		// 1. Get User profile to get the author URN
-		const meResponse = await fetch('https://api.linkedin.com/v2/userinfo', {
-			headers: { 'Authorization': `Bearer ${token}` }
-		});
-
-		if (!meResponse.ok) {
-			throw new Error(`Failed to fetch LinkedIn profile: ${meResponse.statusText}`);
+		if (!urn) {
+			throw new Error("Missing LinkedIn User URN required for publishing.");
 		}
-
-		const profile = await meResponse.json();
-		const authorUrn = `urn:li:person:${profile.sub}`;
 
 		// Note: we can upload the image using the Assets API, but for simplicity
 		// we'll just include it as an article thumbnail if image uploads get complex.
@@ -25,7 +18,7 @@ export async function publishToLinkedIn(postText: string, imageUrl: string | nul
 		// We will use the v2 Posts API which is the recommended approach.
 
 		const postData: any = {
-			author: authorUrn,
+			author: urn,
 			lifecycleState: "PUBLISHED",
 			specificContent: {
 				"com.linkedin.ugc.ShareContent": {

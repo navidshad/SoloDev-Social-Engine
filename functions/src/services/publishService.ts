@@ -39,11 +39,12 @@ export async function publishDraftInternal(userId: string, draftId: string) {
 	const xAccessToken = userData.xAccessToken;
 	const xAccessSecret = userData.xAccessSecret;
 	const linkedInAccessToken = userData.linkedInAccessToken;
+	const linkedInUrn = userData.linkedInUrn;
 
 	// 4. Publish to Networks
 	const results = await Promise.allSettled([
 		publishToX(draft.xPost, draft.extractedImage, xAppKey, xAppSecret, xAccessToken, xAccessSecret),
-		publishToLinkedIn(draft.linkedinPost, draft.extractedImage, linkedInAccessToken)
+		publishToLinkedIn(draft.linkedinPost, draft.extractedImage, linkedInAccessToken, linkedInUrn)
 	]);
 
 	const xResult = results[0];
