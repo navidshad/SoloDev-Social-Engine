@@ -41,7 +41,8 @@ export async function publishToLinkedIn(postText: string, imageUrl: string | nul
 		};
 
 		// If an image URL is provided, we can attach it as an article link or image
-		if (imageUrl) {
+		const isValidUrl = imageUrl?.startsWith('http');
+		if (imageUrl && isValidUrl) {
 			postData.specificContent["com.linkedin.ugc.ShareContent"].shareMediaCategory = "ARTICLE";
 			postData.specificContent["com.linkedin.ugc.ShareContent"].media = [
 				{
@@ -55,6 +56,8 @@ export async function publishToLinkedIn(postText: string, imageUrl: string | nul
 					}
 				}
 			];
+		} else if (imageUrl && !isValidUrl) {
+			console.warn(`Skipping invalid image URL for LinkedIn: ${imageUrl}`);
 		}
 
 		const shareResponse = await fetch('https://api.linkedin.com/v2/ugcPosts', {

@@ -46,11 +46,10 @@ export const handleGithubRelease = onRequest({ secrets: ["X_API_KEY", "X_API_SEC
 		const settingsSnap = await db.collection(`users/${userId}/settings`).doc('config').get();
 		const settingsData = settingsSnap.data();
 		const settings = settingsSnap.exists ? settingsData : {};
-		const personaVoice = settings?.personaVoice || 'Write a general tech post.';
-		const geminiApiKey = settings?.geminiApiKey;
 		const autoPostEnabled = settings?.autoPostEnabled === true;
+		console.log(`Settings for user ${userId}: autoPostEnabled=${autoPostEnabled}, geminiApiKey=${!!settings?.geminiApiKey}`);
 
-		if (!geminiApiKey) {
+		if (!settings?.geminiApiKey) {
 			console.log(`Gemini API Key missing for user ${userId}. skipping post generation.`);
 			res.status(200).send('Gemini API Key not configured, skipping generation.');
 			return;
@@ -101,6 +100,8 @@ export const handleGithubRelease = onRequest({ secrets: ["X_API_KEY", "X_API_SEC
 			}
 		}
 
+		const personaVoice = settings?.personaVoice || 'Write a general tech post.';
+		const geminiApiKey = settings?.geminiApiKey;
 		console.log(`Generating posts for ${repoName} ${version} | isIntro: ${isIntro} | isBatched: ${isBatched}`);
 		const generated = await generateSocialPosts(geminiApiKey, finalReleaseNotes, repoName, version, personaVoice, { isIntro, isBatched });
 

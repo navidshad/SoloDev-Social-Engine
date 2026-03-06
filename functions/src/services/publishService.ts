@@ -57,17 +57,10 @@ export async function publishDraftInternal(userId: string, draftId: string) {
 	const xResult = results[0];
 	const liResult = results[1];
 
+	// 5. Update Draft Status
 	const xSuccess = xResult.status === 'fulfilled';
 	const liSuccess = liResult.status === 'fulfilled';
-
-	if (!xSuccess && !liSuccess) {
-		const xErr = (xResult as PromiseRejectedResult).reason?.message || "Unknown X Error";
-		const liErr = (liResult as PromiseRejectedResult).reason?.message || "Unknown LinkedIn Error";
-		throw new Error(`Publishing failed for both networks. X: ${xErr}, LI: ${liErr}`);
-	}
-
-	// 5. Update Draft Status
-	const status = (xSuccess && liSuccess) ? 'Published' : 'Partially Published';
+	const status = (xSuccess && liSuccess) ? 'Published' : (xSuccess || liSuccess ? 'Partially Published' : 'Failed');
 
 	await draftRef.update({
 		status,
@@ -79,6 +72,12 @@ export async function publishDraftInternal(userId: string, draftId: string) {
 			linkedin: liSuccess ? null : (liResult as PromiseRejectedResult).reason?.message || "Unknown error",
 		}
 	});
+
+	if (!xSuccess && !liSuccess) {
+		const xErr = (xResult as PromiseRejectedResult).reason?.message || "Unknown X Error";
+		const liErr = (liResult as PromiseRejectedResult).reason?.message || "Unknown LinkedIn Error";
+		throw new Error(`Publishing failed for both networks. X: ${xErr}, LI: ${liErr}`);
+	}
 
 	return {
 		success: true,

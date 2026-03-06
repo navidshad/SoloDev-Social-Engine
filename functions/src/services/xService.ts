@@ -21,16 +21,27 @@ export async function publishToX(postText: string, imageUrl: string | null, acce
 
 		let mediaId: string | undefined = undefined;
 
-		// If an image URL is provided, we fetch it and upload to X first
-		if (imageUrl) {
-			console.log(`Fetching image from ${imageUrl} for X...`);
-			const response = await fetch(imageUrl);
-			const arrayBuffer = await response.arrayBuffer();
-			const buffer = Buffer.from(arrayBuffer);
+		// 2. Upload image to X if available and valid
+		const isValidUrl = imageUrl?.startsWith('http');
 
-			// Note: Uploading media requires an OAuth 1.0a user context
-			mediaId = await rwClient.v1.uploadMedia(buffer, { mimeType: response.headers.get('content-type') || 'image/png' });
-			console.log("Uploaded media to X. Media ID:", mediaId);
+		if (imageUrl && isValidUrl) {
+			console.log(`Fetching image from ${imageUrl} for X...`);
+			try {
+				const response = await fetch(imageUrl);
+				if (!response.ok) {
+					throw new Error(`Failed to download image from ${imageUrl}: ${response.statusText}`);
+				}
+				const arrayBuffer = await response.arrayBuffer();
+				const buffer = Buffer.from(arrayBuffer);
+
+				// Note: Uploading media requires an OAuth 1.0a user context
+				mediaId = await rwClient.v1.uploadMedia(buffer, { mimeType: response.headers.get('content-type') || 'image/png' });
+				console.log("Uploaded media to X. Media ID:", mediaId);
+			} catch (imageErr) {
+				console.warn("Could not process image for X, continuing without it:", imageErr);
+			}
+		} else if (imageUrl && !isValidUrl) {
+			console.warn(`Skipping invalid image URL for X: ${imageUrl}`);
 		}
 
 		// Post the tweet

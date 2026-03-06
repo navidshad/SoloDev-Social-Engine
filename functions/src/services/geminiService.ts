@@ -77,7 +77,7 @@ Write a storytelling post (up to 3,000 characters). Expand on the problem this r
 		// Extract all unique markdown image URLs
 		const imageRegex = /!\[.*?\]\((.*?)\)/g;
 		const matches = Array.from(releaseNotes.matchAll(imageRegex));
-		const availableImages = [...new Set(matches.map(m => m[1]))];
+		const availableImages = [...new Set(matches.map(m => m[1]))].filter(url => url.startsWith('http'));
 		const extractedImage = availableImages.length > 0 ? availableImages[0] : null;
 
 		return {
