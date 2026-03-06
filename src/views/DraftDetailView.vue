@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Card, Button, Tabs, Icon } from 'pilotui/elements'
 import { TextArea, Input } from 'pilotui/form'
@@ -148,6 +148,12 @@ const applyProposed = () => {
 
 const publish = async () => {
 	if (!draft.value) return
+
+	const targetPlatform = activeTab.value === 'x' ? 'X (Twitter)' : 'LinkedIn'
+	const action = (draft.value.status === 'Published' || draft.value.status === 'Partially Published') ? 'Republish' : 'Publish'
+
+	if (!confirm(`Are you sure you want to ${action.toLowerCase()} this post to ${targetPlatform}?`)) return
+
 	isPublishing.value = true
 	try {
 		// Save first to ensure latest edits are published
@@ -155,11 +161,15 @@ const publish = async () => {
 
 		const functions = getFunctions()
 		const publishDraftFn = httpsCallable(functions, 'publishDraft')
-		const result = await publishDraftFn({ draftId: draft.value.id }) as any
+		const result = await publishDraftFn({
+			draftId: draft.value.id,
+			publishToX: activeTab.value === 'x',
+			publishToLinkedIn: activeTab.value === 'linkedin'
+		}) as any
 
 		if (result.data.success) {
 			toastSuccess('Published successfully!')
-			router.push('/sent')
+			router.push('/inbox')
 		}
 	} catch (error: any) {
 		console.error("Publish failed", error)
@@ -169,15 +179,15 @@ const publish = async () => {
 	}
 }
 
-const discard = async () => {
+const removeDraft = async () => {
 	if (!draft.value || !authStore.user?.uid) return
-	if (confirm('Are you sure you want to discard this draft?')) {
+	if (confirm('Are you sure you want to remove this draft? This cannot be undone.')) {
 		try {
 			const docRef = doc(db, `users/${authStore.user.uid}/drafts`, draft.value.id)
-			await updateDoc(docRef, { status: 'Discarded' })
+			await deleteDoc(docRef)
 			router.push('/inbox')
 		} catch (error) {
-			console.error("Error discarding draft:", error)
+			console.error("Error removing draft:", error)
 		}
 	}
 }
@@ -214,12 +224,19 @@ const discard = async () => {
 					</div>
 				</div>
 				<div class="flex gap-2">
-					<Button variant="outline" @click="discard">Discard</Button>
+					<Button variant="outline" @click="removeDraft">Remove</Button>
 					<Button variant="secondary" :disabled="isSaving" @click="saveDraft">
 						{{ isSaving ? 'Saving...' : 'Save Draft' }}
 					</Button>
 					<Button variant="primary" :disabled="isPublishing" @click="publish">
-						{{ isPublishing ? 'Publishing...' : 'Approve & Publish' }}
+						<template #icon-left v-if="isPublishing">
+							<Icon name="IconLoader" class="w-4 h-4 animate-spin" />
+						</template>
+						<template v-if="isPublishing">Publishing...</template>
+						<template v-else>
+							{{ (draft.status === 'Published' || draft.status === 'Partially Published') ? 'Republish to'
+								: 'Publish to' }} {{ activeTab === 'x' ? 'X' : 'LinkedIn' }}
+						</template>
 					</Button>
 				</div>
 			</div>

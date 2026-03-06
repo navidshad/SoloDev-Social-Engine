@@ -8,7 +8,7 @@ import { publishToLinkedIn } from "./linkedinService";
  * @param draftId The ID of the draft to publish.
  * @returns The result of the publication.
  */
-export async function publishDraftInternal(userId: string, draftId: string) {
+export async function publishDraftInternal(userId: string, draftId: string, options: { publishToX: boolean, publishToLinkedIn: boolean } = { publishToX: true, publishToLinkedIn: true }) {
 	const db = admin.firestore();
 
 	// 1. Fetch Draft
@@ -20,10 +20,6 @@ export async function publishDraftInternal(userId: string, draftId: string) {
 	}
 
 	const draft = draftSnap.data() as any;
-
-	if (draft.status !== "Draft") {
-		throw new Error("This draft has already been processed.");
-	}
 
 	// 2. Fetch User Profile for Native Tokens (X)
 	const userRef = db.doc(`users/${userId}`);
@@ -42,42 +38,69 @@ export async function publishDraftInternal(userId: string, draftId: string) {
 	const linkedInUrn = userData.linkedInUrn;
 
 	// 4. Publish to Networks
-	const results = await Promise.allSettled([
-		publishToX(draft.xPost, draft.extractedImage, xAppKey, xAppSecret, xAccessToken, xAccessSecret),
-		publishToLinkedIn(draft.linkedinPost, draft.extractedImage, linkedInAccessToken, linkedInUrn)
-	]);
+	const promises = [];
+	let xIndex = -1;
+	let liIndex = -1;
 
-	const xResult = results[0];
-	const liResult = results[1];
+	if (options.publishToX) {
+		promises.push(publishToX(draft.xPost, draft.extractedImage, xAppKey, xAppSecret, xAccessToken, xAccessSecret));
+		xIndex = promises.length - 1;
+	}
 
-	// 5. Update Draft Status
-	const xSuccess = xResult.status === 'fulfilled';
-	const liSuccess = liResult.status === 'fulfilled';
-	const status = (xSuccess && liSuccess) ? 'Published' : (xSuccess || liSuccess ? 'Partially Published' : 'Failed');
+	if (options.publishToLinkedIn) {
+		promises.push(publishToLinkedIn(draft.linkedinPost, draft.extractedImage, linkedInAccessToken, linkedInUrn));
+		liIndex = promises.length - 1;
+	}
 
-	await draftRef.update({
+	const results = await Promise.allSettled(promises);
+
+	const xResult = xIndex !== -1 ? results[xIndex] : null;
+	const liResult = liIndex !== -1 ? results[liIndex] : null;
+
+	const xSuccess = xResult?.status === 'fulfilled';
+	const liSuccess = liResult?.status === 'fulfilled';
+
+	let status = draft.status || 'Draft';
+	if (options.publishToX && options.publishToLinkedIn) {
+		status = (xSuccess && liSuccess) ? 'Published' : (xSuccess || liSuccess ? 'Partially Published' : 'Failed');
+	} else if (options.publishToX) {
+		status = xSuccess ? 'Published' : 'Failed';
+		// If it was already published to LinkedIn successfully before, let's keep it 'Published' or 'Partially Published'
+		if (draft.linkedinPostId && xSuccess) status = 'Published';
+		if (draft.linkedinPostId && !xSuccess) status = 'Partially Published';
+	} else if (options.publishToLinkedIn) {
+		status = liSuccess ? 'Published' : 'Failed';
+		// If it was already published to X successfully before
+		if (draft.xPostId && liSuccess) status = 'Published';
+		if (draft.xPostId && !liSuccess) status = 'Partially Published';
+	}
+
+	const updates: any = {
 		status,
-		xPostId: xSuccess ? (xResult as PromiseFulfilledResult<any>).value.id : null,
-		linkedinPostId: liSuccess ? (liResult as PromiseFulfilledResult<any>).value.id : null,
 		publishedAt: admin.firestore.FieldValue.serverTimestamp(),
-		publishErrors: {
-			x: xSuccess ? null : (xResult as PromiseRejectedResult).reason?.message || "Unknown error",
-			linkedin: liSuccess ? null : (liResult as PromiseRejectedResult).reason?.message || "Unknown error",
-		}
-	});
+	};
 
-	if (!xSuccess && !liSuccess) {
-		const xErr = (xResult as PromiseRejectedResult).reason?.message || "Unknown X Error";
-		const liErr = (liResult as PromiseRejectedResult).reason?.message || "Unknown LinkedIn Error";
-		throw new Error(`Publishing failed for both networks. X: ${xErr}, LI: ${liErr}`);
+	if (options.publishToX) {
+		updates.xPostId = xSuccess ? (xResult as PromiseFulfilledResult<any>).value.id : null;
+		updates['publishErrors.x'] = xSuccess ? admin.firestore.FieldValue.delete() : (xResult as PromiseRejectedResult).reason?.message || "Unknown error";
+	}
+	if (options.publishToLinkedIn) {
+		updates.linkedinPostId = liSuccess ? (liResult as PromiseFulfilledResult<any>).value.id : null;
+		updates['publishErrors.linkedin'] = liSuccess ? admin.firestore.FieldValue.delete() : (liResult as PromiseRejectedResult).reason?.message || "Unknown error";
+	}
+
+	await draftRef.update(updates);
+
+	if (!xSuccess && !liSuccess && (options.publishToX || options.publishToLinkedIn)) {
+		throw new Error(`Publishing failed. ${options.publishToX ? 'X: ' + ((xResult as PromiseRejectedResult)?.reason?.message || 'Error') : ''} ${options.publishToLinkedIn ? 'LI: ' + ((liResult as PromiseRejectedResult)?.reason?.message || 'Error') : ''}`);
 	}
 
 	return {
 		success: true,
 		status,
 		results: {
-			x: xSuccess ? 'OK' : 'FAILED',
-			linkedin: liSuccess ? 'OK' : 'FAILED'
+			x: options.publishToX ? (xSuccess ? 'OK' : 'FAILED') : 'SKIPPED',
+			linkedin: options.publishToLinkedIn ? (liSuccess ? 'OK' : 'FAILED') : 'SKIPPED'
 		}
 	};
 }
