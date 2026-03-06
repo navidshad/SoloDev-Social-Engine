@@ -1,48 +1,71 @@
-# solodev-social-engine
+# SoloDev Social Engine
 
-This template should help get you started developing with Vue 3 in Vite.
+SoloDev Social Engine is a serverless, AI-powered hub built specifically for solo developers, indie hackers, and open-source project maintainers. It automatically translates technical GitHub releases into authentic, brand-building social media content for X (Twitter) and LinkedIn, eliminating the context-switching tax of content creation.
 
-## Recommended IDE Setup
+**🔴 Live Version:** [https://solodev-social-engine.web.app](https://solodev-social-engine.web.app)
+## 🚀 Vision & Goal
 
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+Writing code and writing engaging social media copy require two entirely different mental states. This engine solves that problem by catching your technical releases via webhooks, applying your specific "voice" using Google Gemini, and preparing highly engaging drafts that just need a quick review before publishing. Maintain a consistent, engaging public presence without taking time away from coding.
 
-## Recommended Browser Setup
+## ✨ Core Features
 
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd)
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
+*   **The "Brand Control" Dashboard:** A private, authenticated web interface to manage your API keys, platform integrations, and most importantly, your customized "Persona & Voice Configuration."
+*   **AI Content Generation Engine:** Powered by Google Gemini. Automatically triggered by GitHub release webhooks to ingest release notes, extract images/diagrams, and draft platform-specific posts (e.g., short thread hooks for X, storytelling posts for LinkedIn).
+*   **Draft & Review Workflow (The Inbox):** A centralized queue of AI-generated announcements. Review the drafts side-by-side with your raw GitHub release notes, make edits, replace images, and hit publish.
+*   **Automation Toggles:** Option to enable auto-posting, skipping the review process for instant publishing.
+*   **Sent Log:** A historical record of everything published through the engine.
 
-## Type Support for `.vue` Imports in TS
+## 🛠 Tech Stack (The Solo Dev Stack)
 
-TypeScript cannot handle type information for `.vue` imports by default, so we replace the `tsc` CLI with `vue-tsc` for type checking. In editors, we need [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) to make the TypeScript language service aware of `.vue` types.
+Designed to be low-maintenance and heavily utilize free tiers.
 
-## Customize configuration
+*   **Frontend UI:** Vue 3 (Vite), TypeScript, Tailwind CSS
+*   **UI Framework:** [PilotUI](https://pilotui.com/)
+*   **Backend Orchestration:** Firebase Cloud Functions (Node.js) - Serverless architecture.
+*   **Database:** Cloud Firestore
+*   **Authentication:** Firebase Auth (Google Provider / GitHub integration)
+*   **Hosting:** Firebase Hosting
+*   **AI Integration:** Google Gemini API
 
-See [Vite Configuration Reference](https://vite.dev/config/).
+## 💻 Project Development Setup
 
-## Project Setup
+### Recommended IDE Setup
+*   [VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar)
 
+### Prerequisites
+*   Node.js (v20+)
+*   Yarn or npm
+*   Firebase CLI (`npm install -g firebase-tools`)
+*   A Firebase Project with Firestore, Functions, Auth, and Hosting enabled.
+
+### Environment Variables
+You'll need a `.env.local` file in the root directory for frontend Firebase configuration, and separate secrets/environment variables configured for your Cloud Functions (e.g., `GEMINI_API_KEY`, `X_API_KEY`, `LINKEDIN_CLIENT_ID`).
+
+### Install Dependencies
 ```sh
+yarn install
+# or
 npm install
 ```
 
-### Compile and Hot-Reload for Development
-
+### Run Frontend Locally
 ```sh
+yarn run dev
+# or
 npm run dev
 ```
 
-### Type-Check, Compile and Minify for Production
-
+### Build & Deploy
+Deploying the frontend to Firebase Hosting:
 ```sh
 npm run build
+npx firebase-tools deploy --only hosting
 ```
 
-### Lint with [ESLint](https://eslint.org/)
-
+Deploying Cloud Functions:
 ```sh
-npm run lint
+npx firebase-tools deploy --only functions
 ```
+
+## 📄 License
+This project is licensed under the ISC License.
