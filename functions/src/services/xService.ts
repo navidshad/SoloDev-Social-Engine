@@ -4,15 +4,19 @@ import { TwitterApi } from 'twitter-api-v2';
  * Publishes a tweet to X (Twitter).
  * @param postText The text content of the tweet.
  * @param imageUrl (Optional) The URL of the image to attach.
- * @param apiKey The API Key or Bearer Token for X. Currently assuming this is a Bearer Token or App-level token.
- * Note: For posting tweets on behalf of a user, X requires an OAuth 1.0a User Context or OAuth 2.0 User Context token.
- * We assume `apiKey` is a valid token that can instantiate a client with tweet capabilities.
+ * @param accessToken The User's OAuth 1.0a Access Token.
+ * @param accessSecret The User's OAuth 1.0a Access Secret.
  */
-export async function publishToX(postText: string, imageUrl: string | null, apiKey: string) {
+export async function publishToX(postText: string, imageUrl: string | null, accessToken: string, accessSecret: string) {
 	console.log("Publishing to X...");
 	try {
-		// Initializing with bearer token (or you can adjust to use OAuth 1.0a keys if the apiKey string is a JSON payload)
-		const client = new TwitterApi(apiKey);
+		// Initializing with OAuth 1.0a user context
+		const client = new TwitterApi({
+			appKey: process.env.X_API_KEY || '',
+			appSecret: process.env.X_API_SECRET || '',
+			accessToken: accessToken,
+			accessSecret: accessSecret,
+		});
 		const rwClient = client.readWrite;
 
 		let mediaId: string | undefined = undefined;
@@ -24,7 +28,7 @@ export async function publishToX(postText: string, imageUrl: string | null, apiK
 			const arrayBuffer = await response.arrayBuffer();
 			const buffer = Buffer.from(arrayBuffer);
 
-			// Note: Uploading media requires an OAuth 1.0a user context in most cases.
+			// Note: Uploading media requires an OAuth 1.0a user context
 			mediaId = await rwClient.v1.uploadMedia(buffer, { mimeType: response.headers.get('content-type') || 'image/png' });
 			console.log("Uploaded media to X. Media ID:", mediaId);
 		}

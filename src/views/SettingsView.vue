@@ -169,7 +169,9 @@ const saveSettings = async () => {
 	isSaving.value = true
 	try {
 		const docRef = doc(db, `users/${authStore.user.uid}/settings`, 'config')
-		await setDoc(docRef, config.value, { merge: true })
+		// We remove xApiKey and linkedInToken from the save payload since they are now handled by Auth
+		const { xApiKey, linkedInToken, ...restConfig } = config.value as any;
+		await setDoc(docRef, restConfig, { merge: true })
 		toastSuccess("Settings saved successfully!")
 	} catch (error: any) {
 		console.error("Failed to save settings:", error)
@@ -195,6 +197,26 @@ const handleDisconnectGithub = async () => {
 	} catch (error: unknown) {
 		console.error(error)
 		const msg = error instanceof Error ? error.message : "Failed to disconnect GitHub account."
+		toastError(msg)
+	}
+}
+
+const handleConnectX = async () => {
+	try {
+		await authStore.connectX()
+	} catch (error: unknown) {
+		console.error(error)
+		const msg = error instanceof Error ? error.message : "Failed to connect X account."
+		toastError(msg)
+	}
+}
+
+const handleDisconnectX = async () => {
+	try {
+		await authStore.disconnectX()
+	} catch (error: unknown) {
+		console.error(error)
+		const msg = error instanceof Error ? error.message : "Failed to disconnect X account."
 		toastError(msg)
 	}
 }
@@ -233,6 +255,31 @@ const handleDisconnectGithub = async () => {
 								authStore.githubLoading ? 'Disconnecting...' : 'Disconnect' }}</Button>
 						<Button v-else variant="outline" size="sm" :disabled="authStore.githubLoading"
 							@click="handleConnectGithub">{{ authStore.githubLoading ? 'Connecting...' : 'Connect'
+							}}</Button>
+					</div>
+				</div>
+
+				<div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+					<div class="flex items-center gap-3">
+						<svg class="h-6 w-6 dark:text-white" fill="currentColor" viewBox="0 0 24 24">
+							<path
+								d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231 5.451-6.231zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77z" />
+						</svg>
+						<div>
+							<p class="font-medium dark:text-white">X (Twitter)</p>
+							<p v-if="authStore.isXConnected" class="text-sm text-green-500 font-medium">
+								✓ Connected{{ authStore.xUsername ? ` as ${authStore.xUsername}` : '' }}
+							</p>
+							<p v-else class="text-sm text-gray-500 dark:text-gray-400">Used to publish your tech updates
+							</p>
+						</div>
+					</div>
+					<div class="flex gap-2">
+						<Button v-if="authStore.isXConnected" variant="outline" size="sm" :disabled="authStore.xLoading"
+							@click="handleDisconnectX">{{
+								authStore.xLoading ? 'Disconnecting...' : 'Disconnect' }}</Button>
+						<Button v-else variant="outline" size="sm" :disabled="authStore.xLoading"
+							@click="handleConnectX">{{ authStore.xLoading ? 'Connecting...' : 'Connect'
 							}}</Button>
 					</div>
 				</div>
@@ -285,10 +332,9 @@ const handleDisconnectGithub = async () => {
 			<div class="p-6 space-y-4">
 				<h3 class="text-lg font-semibold dark:text-white">API & Integration Settings</h3>
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-					<Input v-model="config.xApiKey" label="X (Twitter) API Key" placeholder="sk-..." type="password" />
+					<Input v-model="config.geminiApiKey" label="Gemini API Key" placeholder="AI..." type="password" />
 					<Input v-model="config.linkedInToken" label="LinkedIn OAuth Token" placeholder="AQV..."
 						type="password" />
-					<Input v-model="config.geminiApiKey" label="Gemini API Key" placeholder="AI..." type="password" />
 				</div>
 			</div>
 		</Card>

@@ -159,7 +159,7 @@ const publish = async () => {
 
 		if (result.data.success) {
 			toastSuccess('Published successfully!')
-			router.push('/inbox')
+			router.push('/sent')
 		}
 	} catch (error: any) {
 		console.error("Publish failed", error)

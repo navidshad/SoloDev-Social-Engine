@@ -3,7 +3,7 @@ import * as admin from "firebase-admin";
 import { publishToX } from "../services/xService";
 import { publishToLinkedIn } from "../services/linkedinService";
 
-export const publishDraft = onCall({ cors: true }, async (request) => {
+export const publishDraft = onCall({ cors: true, secrets: ["X_API_KEY", "X_API_SECRET"] }, async (request) => {
 	// Authentication check
 	if (!request.auth) {
 		throw new HttpsError("unauthenticated", "You must be logged in to publish drafts.");
@@ -33,26 +33,32 @@ export const publishDraft = onCall({ cors: true }, async (request) => {
 			throw new HttpsError("failed-precondition", "This draft has already been processed.");
 		}
 
-		// 2. Fetch User Settings for API Keys
+		// 2. Fetch User Profile for Native Tokens (X)
+		const userRef = db.doc(`users/${uid}`);
+		const userSnap = await userRef.get();
+
+		if (!userSnap.exists) {
+			throw new HttpsError("not-found", "User profile not found.");
+		}
+
+		const userData = userSnap.data() as any;
+		const xAccessToken = userData.xAccessToken;
+		const xAccessSecret = userData.xAccessSecret;
+
+		// 3. Fetch User Settings for LinkedIn (Manual for now)
 		const settingsRef = db.doc(`users/${uid}/settings/config`);
 		const settingsSnap = await settingsRef.get();
 
 		if (!settingsSnap.exists) {
-			throw new HttpsError("failed-precondition", "User settings not found. Please configure API keys first.");
+			throw new HttpsError("failed-precondition", "User settings not found.");
 		}
 
 		const settings = settingsSnap.data() as any;
-
-		const xApiKey = settings.xApiKey;
 		const linkedInToken = settings.linkedInToken;
 
-		if (!xApiKey || !linkedInToken) {
-			throw new HttpsError("failed-precondition", "Missing X API Key or LinkedIn Token in settings.");
-		}
-
-		// 3. Publish to Networks
+		// 4. Publish to Networks
 		const results = await Promise.allSettled([
-			publishToX(draft.xPost, draft.extractedImage, xApiKey),
+			publishToX(draft.xPost, draft.extractedImage, xAccessToken, xAccessSecret),
 			publishToLinkedIn(draft.linkedinPost, draft.extractedImage, linkedInToken)
 		]);
 
