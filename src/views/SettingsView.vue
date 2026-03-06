@@ -278,30 +278,23 @@ const handleDisconnectX = async () => {
 const isLinkedInModalOpen = ref(false)
 const testingLinkedIn = ref(false)
 const linkedInToken = ref('')
-const linkedInUrn = ref('')
 
 const handleTestAndSaveLinkedIn = async (toggleModal: (state: boolean) => void) => {
-	if (!authStore.user?.uid || !linkedInToken.value || !linkedInUrn.value) return;
+	if (!authStore.user?.uid || !linkedInToken.value) return;
 	testingLinkedIn.value = true;
 	try {
 		const functions = getFunctions()
-		// We pass the token and manually typed URN
-		const testFn = httpsCallable<{ accessToken: string, urn: string }, { success: boolean, name: string }>(functions, 'testLinkedInCredentials')
-		const result = await testFn({ accessToken: linkedInToken.value, urn: linkedInUrn.value })
+		const testFn = httpsCallable<{ accessToken: string }, { success: boolean, name: string, urn: string }>(functions, 'testLinkedInCredentials')
+		const result = await testFn({ accessToken: linkedInToken.value })
 
 		if (result.data.success) {
 			const username = result.data.name;
+			const urn = result.data.urn;
 			const userRef = doc(db, 'users', authStore.user.uid);
-
-			// Format the URN if they just pasted the ID
-			let formattedUrn = linkedInUrn.value;
-			if (!formattedUrn.startsWith('urn:li:person:')) {
-				formattedUrn = `urn:li:person:${formattedUrn}`;
-			}
 
 			await setDoc(userRef, {
 				linkedInAccessToken: linkedInToken.value,
-				linkedInUrn: formattedUrn,
+				linkedInUrn: urn,
 				linkedInUsername: username,
 				linkedInConnectedAt: new Date(),
 			}, { merge: true });
@@ -310,7 +303,6 @@ const handleTestAndSaveLinkedIn = async (toggleModal: (state: boolean) => void) 
 			toastSuccess("LinkedIn Account successfully connected!")
 			toggleModal(false)
 			linkedInToken.value = ''
-			linkedInUrn.value = ''
 		}
 	} catch (error: any) {
 		console.error("Test LinkedIn token failed:", error)
@@ -463,23 +455,19 @@ const handleDisconnectLinkedIn = async () => {
 									<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 										To publish to LinkedIn, you need to provide an OAuth 2.0 Access Token. You can
 										generate one from the LinkedIn Developer Portal under your App's Auth -> Token
-										Generator. Make sure it has the `w_member_social` scope.
+										Generator. Make sure it has both the `w_member_social` and `r_liteprofile`
+										scopes.
 										<br /><br />
-										Since this scope doesn't expose your profile ID automatically, you must also
-										provide your LinkedIn Person URN (or just the ID string). You can find this by
-										querying the `https://api.linkedin.com/v2/me` endpoint in their tester or by
-										inspecting your API logs.
+										<i>Note: If you don't see `r_liteprofile` available, make sure you have added
+											the "Sign In with LinkedIn" product to your app!</i>
 									</p>
 									<Input v-model="linkedInToken" label="LinkedIn Access Token"
 										placeholder="Enter Access Token" type="password" />
-									<Input v-model="linkedInUrn" label="Person URN or ID"
-										placeholder="e.g. urn:li:person:abc123xyz or abc123xyz" />
 
 									<div
 										class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
 										<Button variant="outline" @click="toggleModal(false)">Cancel</Button>
-										<Button variant="primary"
-											:disabled="testingLinkedIn || !linkedInToken || !linkedInUrn"
+										<Button variant="primary" :disabled="testingLinkedIn || !linkedInToken"
 											@click="handleTestAndSaveLinkedIn(toggleModal)">
 											{{ testingLinkedIn ? 'Testing Connection...' : 'Test & Save' }}
 										</Button>
