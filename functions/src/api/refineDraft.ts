@@ -9,20 +9,20 @@ export const refineDraft = onCall({ cors: true }, async (request) => {
 	}
 
 	const uid = request.auth.uid;
-	const { draftId, platform, prompt } = request.data;
+	const { draftId, platform, prompt, currentText } = request.data;
 
-	if (!draftId || !platform || !prompt) {
-		throw new HttpsError("invalid-argument", "The draftId, platform, and prompt parameters are required.");
+	if (!draftId || !platform || !prompt || currentText === undefined) {
+		throw new HttpsError("invalid-argument", "The draftId, platform, prompt, and currentText parameters are required.");
 	}
 
-	if (platform !== 'x' && platform !== 'linkedin' && platform !== 'all') {
-		throw new HttpsError("invalid-argument", "Platform must be 'x', 'linkedin', or 'all'.");
+	if (platform !== 'x' && platform !== 'linkedin') {
+		throw new HttpsError("invalid-argument", "Platform must be 'x' or 'linkedin'. Use active tab only.");
 	}
 
 	const db = admin.firestore();
 
 	try {
-		// 1. Fetch Draft
+		// 1. Fetch Draft (for context like repoName/releaseNotes)
 		const draftRef = db.doc(`users/${uid}/drafts/${draftId}`);
 		const draftSnap = await draftRef.get();
 
@@ -43,26 +43,20 @@ export const refineDraft = onCall({ cors: true }, async (request) => {
 			releaseNotes: draft.releaseNotes
 		};
 
-		const updates: any = {};
+		// 3. Refine the specific platform text provided by the user
+		const refinedText = await refineSocialPost(currentText, platform as any, prompt, personaVoice, context);
 
-		if (platform === 'x' || platform === 'all') {
-			updates.xPost = await refineSocialPost(draft.xPost, 'x', prompt, personaVoice, context);
-		}
-
-		if (platform === 'linkedin' || platform === 'all') {
-			updates.linkedinPost = await refineSocialPost(draft.linkedinPost, 'linkedin', prompt, personaVoice, context);
-		}
-
-		// 3. Update Draft
+		// 4. Update Draft (optional, but good for persistence if they apply it later)
+		// We don't update the main post fields here yet, because the user hasn't "Applied" it in the UI.
+		// However, we record the prompt for history.
 		await draftRef.update({
-			...updates,
-			lastRefinedAt: admin.firestore.FieldValue.serverTimestamp(),
-			lastRefinementPrompt: prompt
+			lastRefinementPrompt: prompt,
+			lastRefinedAt: admin.firestore.FieldValue.serverTimestamp()
 		});
 
 		return {
 			success: true,
-			updates
+			refinedText
 		};
 
 	} catch (error: any) {

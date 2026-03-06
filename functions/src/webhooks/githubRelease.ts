@@ -101,6 +101,7 @@ export const handleGithubRelease = onRequest(async (req, res) => {
 			xPost: generated.xPost,
 			linkedinPost: generated.linkedinPost,
 			extractedImage: generated.extractedImage,
+			availableImages: generated.availableImages,
 			isIntro,
 			isBatched,
 			status: 'Draft',

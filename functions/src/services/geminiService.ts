@@ -27,10 +27,9 @@ export async function generateSocialPosts(
 
 	const ai = new GoogleGenAI({ apiKey });
 
-	const systemContext = `Repository: ${repoName}
-Version: ${version}
+	const systemContext = `Version: ${version}
 
-CRITICAL: Output STRICTLY PLAIN TEXT. NO markdown, NO bold (**), NO italics (_), NO markdown image tags (![]()), NO links. LinkedIn and X do not support markdown. Just clean, raw text.
+CRITICAL: Output STRICTLY PLAIN TEXT. NO markdown, NO labels like "LinkedIn Post:" or "X Post:", NO bold, NO italics, NO links. Output ONLY the post body.
 `;
 
 	let xPromptContext = '';
@@ -76,15 +75,17 @@ Write a storytelling post (up to 3,000 characters). Expand on the problem this r
 			})
 		]);
 
-		// Simple markdown image extraction fallback
-		// Usually markdown image is ![alt](link)
-		const imageMatch = releaseNotes.match(/!\[.*?\]\((.*?)\)/);
-		const extractedImage = imageMatch ? imageMatch[1] : null;
+		// Extract all unique markdown image URLs
+		const imageRegex = /!\[.*?\]\((.*?)\)/g;
+		const matches = Array.from(releaseNotes.matchAll(imageRegex));
+		const availableImages = [...new Set(matches.map(m => m[1]))];
+		const extractedImage = availableImages.length > 0 ? availableImages[0] : null;
 
 		return {
 			xPost: stripMarkdown((xAppResponse as any).text || ""),
 			linkedinPost: stripMarkdown((linkedinAppResponse as any).text || ""),
-			extractedImage
+			extractedImage,
+			availableImages
 		};
 	} catch (error) {
 		console.error("Error generating posts with Gemini", error);
@@ -124,8 +125,8 @@ Instructions:
 1. Rewrite the ${platformContext} following the User Request while maintaining the established Persona.
 2. Keep it under ${maxLength} characters.
 3. If the platform is X, ensure it has a strong hook.
-4. Output STRICTLY PLAIN TEXT. NO markdown, NO bold, NO italics, NO links, NO markdown image tags.
-5. Output ONLY the new text for the post, with no other commentary.`;
+4. Output STRICTLY PLAIN TEXT. NO markdown, NO labels like "${platformContext}:", NO bold, NO italics, NO links.
+5. Output ONLY the new post body, with no other commentary or labels.`;
 
 	try {
 		const response = await ai.models.generateContent({

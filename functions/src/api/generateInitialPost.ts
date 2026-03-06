@@ -77,6 +77,7 @@ export const generateInitialPost = onCall({ cors: true }, async (request) => {
 			xPost: generated.xPost,
 			linkedinPost: generated.linkedinPost,
 			extractedImage: generated.extractedImage,
+			availableImages: generated.availableImages,
 			isIntro: true,
 			isBatched: true,
 			status: 'Draft',

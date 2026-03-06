@@ -20,6 +20,7 @@ interface Draft {
 	xPost: string;
 	linkedinPost: string;
 	extractedImage: string | null;
+	availableImages?: string[];
 	status: string;
 	includedReleases?: string[];
 }
@@ -31,6 +32,8 @@ const isPublishing = ref(false)
 const isRefining = ref(false)
 const refinementPrompt = ref('')
 const activeTab = ref('x')
+const proposedText = ref('')
+const isComparing = ref(false)
 
 const tabs = [
 	{ id: 'x', label: 'X (Twitter)' },
@@ -69,6 +72,7 @@ const saveDraft = async () => {
 		await updateDoc(docRef, {
 			xPost: draft.value.xPost,
 			linkedinPost: draft.value.linkedinPost,
+			extractedImage: draft.value.extractedImage,
 			updatedAt: new Date()
 		})
 	} catch (error) {
@@ -82,21 +86,20 @@ const refineAI = async () => {
 	if (!draft.value || !refinementPrompt.value || !authStore.user?.uid) return
 	isRefining.value = true
 	try {
+		const currentText = activeTab.value === 'x' ? draft.value.xPost : draft.value.linkedinPost
 		const functions = getFunctions()
 		const refineDraftFn = httpsCallable(functions, 'refineDraft')
 
 		const result = await refineDraftFn({
 			draftId: draft.value.id,
 			platform: activeTab.value,
-			prompt: refinementPrompt.value
+			prompt: refinementPrompt.value,
+			currentText
 		}) as any
 
 		if (result.data.success) {
-			if (activeTab.value === 'x') {
-				draft.value.xPost = result.data.updates.xPost
-			} else {
-				draft.value.linkedinPost = result.data.updates.linkedinPost
-			}
+			proposedText.value = result.data.refinedText
+			isComparing.value = true
 			refinementPrompt.value = ''
 		}
 	} catch (error: any) {
@@ -105,6 +108,38 @@ const refineAI = async () => {
 	} finally {
 		isRefining.value = false
 	}
+}
+
+const quickRefine = async (action: string) => {
+	let actionPrompt = ''
+	switch (action) {
+		case 'shorten':
+			const limit = activeTab.value === 'x' ? '280' : '3000'
+			actionPrompt = `Shorten this post to fit well within the ${limit} character limit while keeping the core message.`
+			break
+		case 'emojis':
+			actionPrompt = "Add relevant emojis to make it more engaging, but don't overdo it."
+			break
+		case 'professional':
+			actionPrompt = "Make the tone more professional and polished."
+			break
+		case 'casual':
+			actionPrompt = "Make the tone more casual, friendly, and conversational."
+			break
+	}
+
+	if (!actionPrompt) return
+	refinementPrompt.value = actionPrompt
+}
+
+const applyProposed = () => {
+	if (activeTab.value === 'x') {
+		draft.value!.xPost = proposedText.value
+	} else {
+		draft.value!.linkedinPost = proposedText.value
+	}
+	isComparing.value = false
+	proposedText.value = ''
 }
 
 const publish = async () => {
@@ -217,7 +252,24 @@ const discard = async () => {
 							</Tabs>
 						</div>
 
-						<div class="flex-1 p-4 overflow-y-auto">
+						<div class="flex-1 p-4 overflow-y-auto relative">
+							<!-- Proposed Text Comparison Overlay -->
+							<div v-show="isComparing"
+								class="absolute inset-0 z-10 bg-white/95 dark:bg-gray-900/95 p-4 flex flex-col">
+								<div class="flex items-center justify-between mb-2">
+									<span class="text-xs font-bold text-primary uppercase tracking-wider">AI Proposed
+										Revision</span>
+									<div class="flex gap-2">
+										<Button variant="outline" size="sm" @click="isComparing = false">Keep
+											Original</Button>
+										<Button variant="primary" size="sm" @click="applyProposed">Apply
+											Changes</Button>
+									</div>
+								</div>
+								<TextArea v-model="proposedText" rows="12" class="flex-1 text-lg border-primary/30"
+									readonly />
+							</div>
+
 							<div v-show="activeTab === 'x'" class="h-full flex flex-col">
 								<TextArea v-model="draft.xPost" rows="10" placeholder="What's happening?"
 									class="flex-1 text-lg mb-2" />
@@ -240,40 +292,93 @@ const discard = async () => {
 							</div>
 						</div>
 
-						<!-- Image Preview (Rendered Separately) -->
-						<div v-if="draft.extractedImage" class="px-4 pb-4 shrink-0">
+						<!-- Image Preview & Picker -->
+						<div v-if="draft.extractedImage || (draft.availableImages && draft.availableImages.length > 0)"
+							class="px-4 pb-4 shrink-0">
 							<div
-								class="p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-100 dark:border-gray-700 flex items-center gap-4">
-								<div class="w-20 h-20 rounded bg-gray-200 dark:bg-gray-700 overflow-hidden flex-none">
-									<img :src="draft.extractedImage" class="w-full h-full object-cover" />
+								class="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700">
+								<div
+									class="flex items-center justify-between mb-3 text-xs font-bold text-gray-500 uppercase tracking-tighter">
+									<span>Selected Media</span>
+									<span v-if="draft.availableImages && draft.availableImages.length > 1"
+										class="text-primary">{{
+											draft.availableImages.length }} Images Extracted</span>
 								</div>
-								<div class="flex-1 min-w-0">
-									<p class="text-xs font-semibold text-gray-500 uppercase mb-1">Attached Media</p>
-									<p class="text-xs text-gray-400 truncate">{{ draft.extractedImage }}</p>
+
+								<div class="flex gap-4">
+									<div
+										class="w-24 h-24 rounded-lg bg-gray-200 dark:bg-gray-700 overflow-hidden ring-2 ring-primary/20 flex-none relative">
+										<img v-if="draft.extractedImage" :src="draft.extractedImage"
+											class="w-full h-full object-cover" />
+										<div v-else
+											class="w-full h-full flex items-center justify-center text-gray-400">
+											<Icon name="IconPhotoOff" class="w-8 h-8" />
+										</div>
+										<Button v-if="draft.extractedImage" variant="destructive" size="sm"
+											class="absolute top-1 right-1 h-6 w-6 p-0! rounded-full"
+											@click="draft.extractedImage = null">
+											<Icon name="IconX" class="w-3 h-3" />
+										</Button>
+									</div>
+
+									<div v-if="draft.availableImages && draft.availableImages.length > 1"
+										class="flex-1 overflow-x-auto">
+										<p class="text-[10px] text-gray-400 mb-2">Available in Release Notes:</p>
+										<div class="flex gap-2">
+											<button v-for="img in draft.availableImages" :key="img"
+												class="w-16 h-16 rounded border-2 transition-all flex-none overflow-hidden"
+												:class="draft.extractedImage === img ? 'border-primary ring-2 ring-primary/20' : 'border-transparent hover:border-gray-300'"
+												@click="draft.extractedImage = img">
+												<img :src="img" class="w-full h-full object-cover" />
+											</button>
+										</div>
+									</div>
+									<div v-else-if="draft.extractedImage" class="flex-1 flex flex-col justify-center">
+										<p class="text-xs text-gray-400 break-all font-mono">{{ draft.extractedImage }}
+										</p>
+									</div>
 								</div>
-								<Button variant="outline" size="sm" @click="draft.extractedImage = null">Remove</Button>
 							</div>
 						</div>
 					</Card>
 
 					<!-- AI Refinement Section -->
 					<Card class="shrink-0 p-4 bg-gray-50 dark:bg-gray-800 border-primary/20">
-						<div class="flex gap-4 items-end">
-							<div class="flex-1">
-								<label class="text-xs font-semibold text-gray-500 uppercase mb-1 block">AI Refinement
-									Prompt</label>
-								<div class="flex gap-2">
-									<Input v-model="refinementPrompt"
-										placeholder="e.g. 'Make it more professional', 'Translate to Spanish', 'Summarize into a thread'..."
-										@keyup.enter="refineAI" class="flex-1" />
-									<Button variant="primary" :disabled="isRefining || !refinementPrompt"
-										@click="refineAI">
-										<template #icon-left>
-											<Icon :name="isRefining ? 'IconLoader' : 'IconCpuBolt'" class="w-4 h-4"
-												:class="{ 'animate-spin': isRefining }" />
-										</template>
-										Refine with AI
-									</Button>
+						<div class="flex flex-col gap-4">
+							<!-- Quick Actions -->
+							<div class="flex flex-wrap gap-2">
+								<Button variant="outline" size="sm" @click="quickRefine('shorten')" class="text-xs">
+									⚡ Shorten to fit
+								</Button>
+								<Button variant="outline" size="sm" @click="quickRefine('emojis')" class="text-xs">
+									✨ Add Emojis
+								</Button>
+								<Button variant="outline" size="sm" @click="quickRefine('professional')"
+									class="text-xs">
+									👔 Professional
+								</Button>
+								<Button variant="outline" size="sm" @click="quickRefine('casual')" class="text-xs">
+									👋 Casual
+								</Button>
+							</div>
+
+							<div class="flex gap-4 items-end">
+								<div class="flex-1">
+									<label class="text-xs font-semibold text-gray-500 uppercase mb-1 block">Custom
+										Revision Prompt</label>
+									<div class="flex gap-2">
+										<Input v-model="refinementPrompt"
+											placeholder="e.g. 'Add a cliffhanger', 'Translate to German'..."
+											@keyup.enter="refineAI" class="flex-1" />
+										<Button variant="primary" :disabled="isRefining || !refinementPrompt"
+											@click="refineAI">
+											<template #icon-left>
+												<Icon :name="isRefining ? 'IconLoader' : 'IconCpuBolt'" class="w-4 h-4"
+													:class="{ 'animate-spin': isRefining }" />
+											</template>
+											Refine
+										</Button>
+									</div>
 								</div>
 							</div>
 						</div>
