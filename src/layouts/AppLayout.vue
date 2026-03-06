@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { DashboardShell, SidebarMenu, Button } from 'pilotui'
+import ThemeSwitcher from '../components/ThemeSwitcher.vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
@@ -45,7 +46,8 @@ const handleMenuClick = (item: any, closeSidebar: () => void) => {
 <template>
 	<DashboardShell brandTitle="SoloDev Social" brand-logo="/logo.png" menuStyle="vertical" :hideMenu="false">
 		<template #header>
-			<div class="flex justify-end">
+			<div class="flex items-center justify-end gap-4">
+				<ThemeSwitcher />
 				<Button variant="destructive" @click="handleLogout">
 					Logout
 				</Button>
