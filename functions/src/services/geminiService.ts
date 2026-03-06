@@ -13,16 +13,15 @@ function stripMarkdown(text: string): string {
 
 
 export async function generateSocialPosts(
+	apiKey: string,
 	releaseNotes: string,
 	repoName: string,
 	version: string,
 	personaVoice: string,
 	options: { isIntro?: boolean, isBatched?: boolean } = {}
 ) {
-	// Use Firebase Secrets or env vars for the API Key
-	const apiKey = process.env.GEMINI_API_KEY;
 	if (!apiKey) {
-		throw new Error("GEMINI_API_KEY is not set.");
+		throw new Error("Gemini API Key is required.");
 	}
 
 	const ai = new GoogleGenAI({ apiKey });
@@ -93,15 +92,15 @@ Write a storytelling post (up to 3,000 characters). Expand on the problem this r
 	}
 }
 export async function refineSocialPost(
+	apiKey: string,
 	currentText: string,
 	platform: 'x' | 'linkedin',
 	prompt: string,
 	personaVoice: string,
 	context: { repoName: string, version: string, releaseNotes: string }
 ) {
-	const apiKey = process.env.GEMINI_API_KEY;
 	if (!apiKey) {
-		throw new Error("GEMINI_API_KEY is not set.");
+		throw new Error("Gemini API Key is required.");
 	}
 
 	const ai = new GoogleGenAI({ apiKey });

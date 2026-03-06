@@ -94,6 +94,6 @@ export const publishDraft = onCall({ cors: true }, async (request) => {
 		if (error instanceof HttpsError) {
 			throw error;
 		}
-		throw new HttpsError("internal", "An unexpected error occurred while publishing.");
+		throw new HttpsError("internal", error.message || "An unexpected error occurred while publishing.");
 	}
 });

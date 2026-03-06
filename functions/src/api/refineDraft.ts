@@ -32,10 +32,16 @@ export const refineDraft = onCall({ cors: true }, async (request) => {
 
 		const draft = draftSnap.data() as any;
 
-		// 2. Fetch User Settings for Persona
+		// 2. Fetch User Settings for Persona and AI Key
 		const settingsRef = db.doc(`users/${uid}/settings/config`);
 		const settingsSnap = await settingsRef.get();
-		const personaVoice = settingsSnap.exists ? settingsSnap.data()?.personaVoice : 'Write a general tech post.';
+		const settingsData = settingsSnap.data();
+		const personaVoice = settingsSnap.exists ? settingsData?.personaVoice : 'Write a general tech post.';
+		const geminiApiKey = settingsData?.geminiApiKey;
+
+		if (!geminiApiKey) {
+			throw new HttpsError("failed-precondition", "Gemini API Key is not configured in settings.");
+		}
 
 		const context = {
 			repoName: draft.repoName,
@@ -44,7 +50,7 @@ export const refineDraft = onCall({ cors: true }, async (request) => {
 		};
 
 		// 3. Refine the specific platform text provided by the user
-		const refinedText = await refineSocialPost(currentText, platform as any, prompt, personaVoice, context);
+		const refinedText = await refineSocialPost(geminiApiKey, currentText, platform as any, prompt, personaVoice, context);
 
 		// 4. Update Draft (optional, but good for persistence if they apply it later)
 		// We don't update the main post fields here yet, because the user hasn't "Applied" it in the UI.
@@ -64,6 +70,6 @@ export const refineDraft = onCall({ cors: true }, async (request) => {
 		if (error instanceof HttpsError) {
 			throw error;
 		}
-		throw new HttpsError("internal", "An unexpected error occurred while refining the draft.");
+		throw new HttpsError("internal", error.message || "An unexpected error occurred while refining the draft.");
 	}
 });

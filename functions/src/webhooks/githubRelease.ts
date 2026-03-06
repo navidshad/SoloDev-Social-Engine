@@ -43,7 +43,15 @@ export const handleGithubRelease = onRequest(async (req, res) => {
 
 
 		const settingsSnap = await db.collection(`users/${userId}/settings`).doc('config').get();
-		const personaVoice = settingsSnap.exists ? settingsSnap.data()?.personaVoice : 'Write a general tech post.';
+		const settingsData = settingsSnap.data();
+		const personaVoice = settingsSnap.exists ? settingsData?.personaVoice : 'Write a general tech post.';
+		const geminiApiKey = settingsData?.geminiApiKey;
+
+		if (!geminiApiKey) {
+			console.log(`Gemini API Key missing for user ${userId}. skipping post generation.`);
+			res.status(200).send('Gemini API Key not configured, skipping generation.');
+			return;
+		}
 
 		const sanitizedRepoName = repoName.replace(/\//g, '_');
 		const trackedRepoRef = db.doc(`users/${userId}/trackedRepos/${sanitizedRepoName}`);
@@ -91,7 +99,7 @@ export const handleGithubRelease = onRequest(async (req, res) => {
 		}
 
 		console.log(`Generating posts for ${repoName} ${version} | isIntro: ${isIntro} | isBatched: ${isBatched}`);
-		const generated = await generateSocialPosts(finalReleaseNotes, repoName, version, personaVoice, { isIntro, isBatched });
+		const generated = await generateSocialPosts(geminiApiKey, finalReleaseNotes, repoName, version, personaVoice, { isIntro, isBatched });
 
 		const draftData = {
 			repoName,

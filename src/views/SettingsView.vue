@@ -6,6 +6,7 @@ import { Button } from 'pilotui/elements'
 import { useAuthStore } from '../stores/auth'
 import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, query, where, limit } from 'firebase/firestore'
 import { getFunctions, httpsCallable } from 'firebase/functions'
+import { toastSuccess, toastError } from 'pilotui/toast'
 
 const authStore = useAuthStore()
 const db = getFirestore()
@@ -15,7 +16,8 @@ const config = ref({
 	linkedInToken: '',
 	githubWebhookSecret: '',
 	personaVoice: 'I write in a "build in public" style. I am humble but authoritative. I rarely use hashtags on X. I like to focus on the "why" behind the code. Use a conversational tone.',
-	autoPostEnabled: false
+	autoPostEnabled: false,
+	geminiApiKey: ''
 })
 
 const isSaving = ref(false)
@@ -91,11 +93,11 @@ const generateInitialPost = async (repoName: string) => {
 		const functions = getFunctions()
 		const callFn = httpsCallable(functions, 'generateInitialPost')
 		await callFn({ repoName })
-		alert("Initial draft generated! Check your Inbox.")
+		toastSuccess("Initial draft generated! Check your Inbox.")
 		repoHistoryMap.value[repoName] = true
 	} catch (err: any) {
 		console.error("Error generating initial post:", err)
-		alert(`Failed to generate: ${err.message}`)
+		toastError(`Failed to generate: ${err.message}`)
 	} finally {
 		isGeneratingMap.value[repoName] = false
 	}
@@ -125,7 +127,7 @@ const toggleRepoTracking = async (repoName: string) => {
 		trackedRepoIds.value = newSet;
 	} catch (err) {
 		console.error("Error toggling repo tracking:", err)
-		alert("Failed to update tracking status")
+		toastError("Failed to update tracking status")
 	}
 }
 
@@ -169,11 +171,10 @@ const saveSettings = async () => {
 	try {
 		const docRef = doc(db, `users/${authStore.user.uid}/settings`, 'config')
 		await setDoc(docRef, config.value, { merge: true })
-		// Optional: add a tiny toast or simple alert for feedback
-		// alert("Settings saved successfully!")
-	} catch (error) {
+		toastSuccess("Settings saved successfully!")
+	} catch (error: any) {
 		console.error("Failed to save settings:", error)
-		alert("Failed to save settings")
+		toastError(`Failed to save settings: ${error.message}`)
 	} finally {
 		isSaving.value = false
 	}
@@ -185,7 +186,7 @@ const handleConnectGithub = async () => {
 	} catch (error: unknown) {
 		console.error(error)
 		const msg = error instanceof Error ? error.message : "Failed to connect GitHub account."
-		alert(msg)
+		toastError(msg)
 	}
 }
 
@@ -195,7 +196,7 @@ const handleDisconnectGithub = async () => {
 	} catch (error: unknown) {
 		console.error(error)
 		const msg = error instanceof Error ? error.message : "Failed to disconnect GitHub account."
-		alert(msg)
+		toastError(msg)
 	}
 }
 </script>
@@ -290,6 +291,7 @@ const handleDisconnectGithub = async () => {
 						type="password" />
 					<Input v-model="config.githubWebhookSecret" label="GitHub Webhook Secret"
 						placeholder="Your secret string" type="password" />
+					<Input v-model="config.geminiApiKey" label="Gemini API Key" placeholder="AI..." type="password" />
 				</div>
 			</div>
 		</Card>

@@ -29,10 +29,16 @@ export const generateInitialPost = onCall({ cors: true }, async (request) => {
 			throw new HttpsError("failed-precondition", "GitHub account is not connected.");
 		}
 
-		// Fetch User Settings for Persona
+		// Fetch User Settings for Persona and API Key
 		const settingsRef = db.doc(`users/${uid}/settings/config`);
 		const settingsSnap = await settingsRef.get();
-		const personaVoice = settingsSnap.exists ? settingsSnap.data()?.personaVoice : 'Write a general tech post.';
+		const settingsData = settingsSnap.data();
+		const personaVoice = settingsSnap.exists ? settingsData?.personaVoice : 'Write a general tech post.';
+		const geminiApiKey = settingsData?.geminiApiKey;
+
+		if (!geminiApiKey) {
+			throw new HttpsError("failed-precondition", "Gemini API Key is not configured in settings.");
+		}
 
 		// Fetch repository releases from GitHub API
 		const response = await fetch(`https://api.github.com/repos/${repoName}/releases?per_page=30`, {
@@ -67,7 +73,7 @@ export const generateInitialPost = onCall({ cors: true }, async (request) => {
 		const latestVersion = sortedReleases[sortedReleases.length - 1].tag_name;
 
 		// Generate the post
-		const generated = await generateSocialPosts(finalReleaseNotes, repoName, latestVersion, personaVoice, { isIntro: true, isBatched: true });
+		const generated = await generateSocialPosts(geminiApiKey, finalReleaseNotes, repoName, latestVersion, personaVoice, { isIntro: true, isBatched: true });
 
 		const draftData = {
 			repoName,
@@ -96,6 +102,6 @@ export const generateInitialPost = onCall({ cors: true }, async (request) => {
 		if (error instanceof HttpsError) {
 			throw error;
 		}
-		throw new HttpsError("internal", "An unexpected error occurred while generating the post.");
+		throw new HttpsError("internal", error.message || "An unexpected error occurred while generating the post.");
 	}
 });

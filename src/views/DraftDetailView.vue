@@ -6,6 +6,7 @@ import { TextArea, Input } from 'pilotui/form'
 import { useAuthStore } from '../stores/auth'
 import { getFirestore, doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore'
 import { getFunctions, httpsCallable } from 'firebase/functions'
+import { toastSuccess, toastError } from 'pilotui/toast'
 
 const route = useRoute()
 const router = useRouter()
@@ -75,8 +76,10 @@ const saveDraft = async () => {
 			extractedImage: draft.value.extractedImage,
 			updatedAt: new Date()
 		})
-	} catch (error) {
+		toastSuccess("Draft saved successfully!")
+	} catch (error: any) {
 		console.error("Error saving draft:", error)
+		toastError(`Failed to save draft: ${error.message}`)
 	} finally {
 		isSaving.value = false
 	}
@@ -101,10 +104,11 @@ const refineAI = async () => {
 			proposedText.value = result.data.refinedText
 			isComparing.value = true
 			refinementPrompt.value = ''
+			toastSuccess("Refinement complete!")
 		}
 	} catch (error: any) {
 		console.error("Refinement failed:", error)
-		alert(`AI Refinement failed: ${error.message}`)
+		toastError(`AI Refinement failed: ${error.message}`)
 	} finally {
 		isRefining.value = false
 	}
@@ -154,12 +158,12 @@ const publish = async () => {
 		const result = await publishDraftFn({ draftId: draft.value.id }) as any
 
 		if (result.data.success) {
-			alert('Published successfully!')
+			toastSuccess('Published successfully!')
 			router.push('/inbox')
 		}
 	} catch (error: any) {
 		console.error("Publish failed", error)
-		alert(`Failed to publish: ${error.message}`)
+		toastError(`Failed to publish: ${error.message}`)
 	} finally {
 		isPublishing.value = false
 	}
