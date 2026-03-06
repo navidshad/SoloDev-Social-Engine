@@ -455,10 +455,11 @@ const handleDisconnectLinkedIn = async () => {
 									<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 										To publish to LinkedIn, you need to provide an OAuth 2.0 Access Token. You can
 										generate one from the LinkedIn Developer Portal under your App's Auth -> Token
-										Generator. Make sure it has both the `w_member_social` and `r_liteprofile`
+										Generator. Make sure it has the `w_member_social`, `openid`, and `profile`
 										scopes.
 										<br /><br />
-										<i>Note: If you don't see `r_liteprofile` available, make sure you have added
+										<i>Note: If you don't see `openid` and `profile` available, make sure you have
+											added
 											the "Sign In with LinkedIn" product to your app!</i>
 									</p>
 									<Input v-model="linkedInToken" label="LinkedIn Access Token"

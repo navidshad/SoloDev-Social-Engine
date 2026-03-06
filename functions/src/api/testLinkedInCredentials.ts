@@ -28,16 +28,9 @@ export const testLinkedInCredentials = onCall({ cors: true }, async (request) =>
 				throw new HttpsError('permission-denied', "Authentication failed (401). Invalid or expired access token.");
 			}
 
-			// 403 usually means the user didn't check `r_liteprofile` during generation.
-			// However `w_member_social` is the only requirement to post.
-			// In this fallback, we signify success to the client without fetching the name.
+			// 403 usually means the user didn't check `openid` and `profile` during generation.
 			if (meResponse.status === 403 || errorText.includes('Not enough permissions')) {
-				console.log(`LinkedIn credentials structurally valid, but lacking profile read scopes. Bypassing check.`);
-				return {
-					success: true,
-					name: "LinkedIn User (Limited Scope)",
-					sub: "unknown"
-				};
+				throw new HttpsError('permission-denied', "Your LinkedIn token is missing the 'openid' and 'profile' scopes needed to automatically fetch your Account ID. Please generate a new token with 'w_member_social', 'openid', and 'profile' scopes checked.");
 			}
 
 			throw new HttpsError('permission-denied', `LinkedIn verification failed: ${meResponse.status} - ${meResponse.statusText}`);
@@ -48,8 +41,8 @@ export const testLinkedInCredentials = onCall({ cors: true }, async (request) =>
 
 		return {
 			success: true,
-			name: profile.name,
-			sub: profile.sub
+			name: profile.name || "LinkedIn User",
+			urn: `urn:li:person:${profile.sub}`
 		};
 	} catch (error: any) {
 		console.error("LinkedIn credentials test failed:", error);
