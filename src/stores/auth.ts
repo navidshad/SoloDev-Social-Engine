@@ -25,9 +25,21 @@ export const useAuthStore = defineStore('auth', () => {
 		isGithubConnected.value = !!githubProvider
 		githubUsername.value = githubProvider?.displayName ?? null
 
-		const xProvider = currentUser?.providerData.find(p => p.providerId === 'twitter.com')
-		isXConnected.value = !!xProvider
-		xUsername.value = xProvider?.displayName ?? null
+		if (currentUser) {
+			import('firebase/firestore').then(({ getFirestore, doc, getDoc }) => {
+				const db = getFirestore()
+				getDoc(doc(db, 'users', currentUser.uid)).then(docSnap => {
+					if (docSnap.exists()) {
+						const data = docSnap.data()
+						isXConnected.value = !!data.xAccessToken
+						xUsername.value = data.xUsername ?? null
+					}
+				})
+			})
+		} else {
+			isXConnected.value = false
+			xUsername.value = null
+		}
 	}
 
 	// Initialize auth state listener
@@ -134,77 +146,9 @@ export const useAuthStore = defineStore('auth', () => {
 		}
 	}
 
-	async function connectX() {
-		const currentUser = auth.currentUser
-		if (!currentUser) throw new Error("User must be logged in to connect X")
-
-		xLoading.value = true
-		try {
-			const provider = new TwitterAuthProvider()
-			provider.addScope('tweet.read')
-			provider.addScope('tweet.write')
-			provider.addScope('users.read')
-			const result = await linkWithPopup(currentUser, provider)
-
-			const xProviderData = result.user.providerData.find(p => p.providerId === 'twitter.com')
-			isXConnected.value = true
-			xUsername.value = xProviderData?.displayName ?? null
-			xLoading.value = false
-
-			const credential = TwitterAuthProvider.credentialFromResult(result)
-			const xAccessToken = credential?.accessToken
-			const xAccessSecret = credential?.secret
-
-			if (xAccessToken && xAccessSecret) {
-				import('firebase/firestore').then(({ getFirestore, doc, setDoc, serverTimestamp }) => {
-					const db = getFirestore()
-					return setDoc(
-						doc(db, 'users', currentUser.uid),
-						{
-							xAccessToken,
-							xAccessSecret,
-							xUsername: xProviderData?.displayName ?? null,
-							xConnectedAt: serverTimestamp(),
-						},
-						{ merge: true }
-					)
-				}).catch(e => console.warn('X tokens not saved to Firestore (non-fatal):', e))
-			}
-		} catch (error: any) {
-			xLoading.value = false
-			console.error("X Linking failed:", error)
-			if (error?.code === AuthErrorCodes.CREDENTIAL_ALREADY_IN_USE) {
-				throw new Error("This X account is already connected to a different user.")
-			}
-			throw error
-		}
-	}
-
-	async function disconnectX() {
-		const currentUser = auth.currentUser
-		if (!currentUser) throw new Error("No user logged in")
-
-		xLoading.value = true
-		try {
-			await unlink(currentUser, 'twitter.com')
-			isXConnected.value = false
-			xUsername.value = null
-			xLoading.value = false
-
-			import('firebase/firestore').then(({ getFirestore, doc, updateDoc, deleteField }) => {
-				const db = getFirestore()
-				return updateDoc(doc(db, 'users', currentUser.uid), {
-					xAccessToken: deleteField(),
-					xAccessSecret: deleteField(),
-					xUsername: deleteField(),
-					xConnectedAt: deleteField(),
-				})
-			}).catch(e => console.warn('X tokens not removed from Firestore (non-fatal):', e))
-		} catch (error: any) {
-			xLoading.value = false
-			console.error("X Disconnect failed:", error)
-			throw error
-		}
+	async function setXConnected(connected: boolean, username: string | null = null) {
+		isXConnected.value = connected
+		xUsername.value = username
 	}
 
 	async function logout() {
@@ -227,8 +171,7 @@ export const useAuthStore = defineStore('auth', () => {
 		loginWithGoogle,
 		connectGithub,
 		disconnectGithub,
-		connectX,
-		disconnectX,
+		setXConnected,
 		logout
 	}
 })

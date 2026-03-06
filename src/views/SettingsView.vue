@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
+import { Modal } from 'pilotui/complex'
 import { Card } from 'pilotui/elements'
 import { Input, TextArea, CheckboxInput } from 'pilotui/form'
 import { Button } from 'pilotui/elements'
@@ -210,23 +211,70 @@ const handleDisconnectGithub = async () => {
 	}
 }
 
-const handleConnectX = async () => {
+const isXModalOpen = ref(false)
+const testingX = ref(false)
+const xKeys = ref({
+	appKey: '',
+	appSecret: '',
+	accessToken: '',
+	accessSecret: ''
+})
+
+const handleTestAndSaveX = async (toggleModal: (state: boolean) => void) => {
+	if (!authStore.user?.uid) return;
+	testingX.value = true;
 	try {
-		await authStore.connectX()
-	} catch (error: unknown) {
-		console.error(error)
-		const msg = error instanceof Error ? error.message : "Failed to connect X account."
-		toastError(msg)
+		const functions = getFunctions()
+		const testFn = httpsCallable<typeof xKeys.value, { success: boolean, username: string }>(functions, 'testXCredentials')
+		const result = await testFn(xKeys.value)
+
+		if (result.data.success) {
+			const username = result.data.username;
+			const userRef = doc(db, 'users', authStore.user.uid);
+			await setDoc(userRef, {
+				xAppKey: xKeys.value.appKey,
+				xAppSecret: xKeys.value.appSecret,
+				xAccessToken: xKeys.value.accessToken,
+				xAccessSecret: xKeys.value.accessSecret,
+				xUsername: username,
+				xConnectedAt: new Date(),
+			}, { merge: true });
+
+			authStore.setXConnected(true, username);
+			toastSuccess("X Account successfully connected!")
+			toggleModal(false)
+			xKeys.value = { appKey: '', appSecret: '', accessToken: '', accessSecret: '' }
+		}
+	} catch (error: any) {
+		console.error("Test X keys failed:", error)
+		toastError(`Failed to authenticate with X: ${error.message}`)
+	} finally {
+		testingX.value = false;
 	}
 }
 
 const handleDisconnectX = async () => {
+	if (!authStore.user?.uid) return;
+	testingX.value = true;
 	try {
-		await authStore.disconnectX()
-	} catch (error: unknown) {
-		console.error(error)
-		const msg = error instanceof Error ? error.message : "Failed to disconnect X account."
-		toastError(msg)
+		const userRef = doc(db, 'users', authStore.user.uid);
+		// Import updateDoc and deleteField specifically for this
+		const { updateDoc, deleteField } = await import('firebase/firestore')
+		await updateDoc(userRef, {
+			xAppKey: deleteField(),
+			xAppSecret: deleteField(),
+			xAccessToken: deleteField(),
+			xAccessSecret: deleteField(),
+			xUsername: deleteField(),
+			xConnectedAt: deleteField(),
+		});
+		authStore.setXConnected(false, null);
+		toastSuccess("X Account disconnected.")
+	} catch (error: any) {
+		console.error("X Disconnect failed:", error)
+		toastError(`Failed to disconnect X account: ${error.message}`)
+	} finally {
+		testingX.value = false;
 	}
 }
 </script>
@@ -284,12 +332,41 @@ const handleDisconnectX = async () => {
 						</div>
 					</div>
 					<div class="flex gap-2">
-						<Button v-if="authStore.isXConnected" variant="outline" size="sm" :disabled="authStore.xLoading"
+						<Button v-if="authStore.isXConnected" variant="outline" size="sm" :disabled="testingX"
 							@click="handleDisconnectX">{{
-								authStore.xLoading ? 'Disconnecting...' : 'Disconnect' }}</Button>
-						<Button v-else variant="outline" size="sm" :disabled="authStore.xLoading"
-							@click="handleConnectX">{{ authStore.xLoading ? 'Connecting...' : 'Connect'
-							}}</Button>
+								testingX ? 'Disconnecting...' : 'Disconnect' }}</Button>
+
+						<Modal v-else v-model="isXModalOpen" title="Setup X (Twitter) Account" size="lg">
+							<template #trigger="{ toggleModal }">
+								<Button variant="outline" size="sm" @click="toggleModal(true)">Setup X Account</Button>
+							</template>
+							<template #default="{ toggleModal }">
+								<div class="space-y-4 pt-2">
+									<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+										To publish to X, you need to provide your OAuth 1.0a keys. Create an app in the
+										X Developer Portal with Read/Write permissions.
+									</p>
+									<Input v-model="xKeys.appKey" label="API Key (Consumer Key)"
+										placeholder="Enter API Key" type="password" />
+									<Input v-model="xKeys.appSecret" label="API Key Secret (Consumer Secret)"
+										placeholder="Enter API Key Secret" type="password" />
+									<Input v-model="xKeys.accessToken" label="Access Token"
+										placeholder="Enter Access Token" type="password" />
+									<Input v-model="xKeys.accessSecret" label="Access Token Secret"
+										placeholder="Enter Access Token Secret" type="password" />
+
+									<div
+										class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
+										<Button variant="outline" @click="toggleModal(false)">Cancel</Button>
+										<Button variant="primary"
+											:disabled="testingX || !xKeys.appKey || !xKeys.appSecret || !xKeys.accessToken || !xKeys.accessSecret"
+											@click="handleTestAndSaveX(toggleModal)">
+											{{ testingX ? 'Testing Connection...' : 'Test & Save' }}
+										</Button>
+									</div>
+								</div>
+							</template>
+						</Modal>
 					</div>
 				</div>
 			</div>

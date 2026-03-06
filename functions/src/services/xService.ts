@@ -4,16 +4,21 @@ import { TwitterApi } from 'twitter-api-v2';
  * Publishes a tweet to X (Twitter).
  * @param postText The text content of the tweet.
  * @param imageUrl (Optional) The URL of the image to attach.
+ * @param appKey The User's OAuth 1.0a Consumer Key.
+ * @param appSecret The User's OAuth 1.0a Consumer Secret.
  * @param accessToken The User's OAuth 1.0a Access Token.
  * @param accessSecret The User's OAuth 1.0a Access Secret.
  */
-export async function publishToX(postText: string, imageUrl: string | null, accessToken: string, accessSecret: string) {
+export async function publishToX(postText: string, imageUrl: string | null, appKey: string, appSecret: string, accessToken: string, accessSecret: string) {
 	console.log("Publishing to X...");
+	if (!appKey || !appSecret || !accessToken || !accessSecret) {
+		throw new Error("Missing X API credentials. Please set them up in Settings.");
+	}
 	try {
 		// Initializing with OAuth 1.0a user context
 		const client = new TwitterApi({
-			appKey: process.env.X_API_KEY || '',
-			appSecret: process.env.X_API_SECRET || '',
+			appKey: appKey,
+			appSecret: appSecret,
 			accessToken: accessToken,
 			accessSecret: accessSecret,
 		});
