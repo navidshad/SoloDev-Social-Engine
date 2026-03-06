@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { Card } from 'pilotui/elements'
 import { Input, TextArea, CheckboxInput } from 'pilotui/form'
 import { Button } from 'pilotui/elements'
 import { useAuthStore } from '../stores/auth'
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc } from 'firebase/firestore'
 
 const authStore = useAuthStore()
+const db = getFirestore()
 
 const config = ref({
 	xApiKey: '',
@@ -15,26 +17,145 @@ const config = ref({
 	autoPostEnabled: false
 })
 
+const isSaving = ref(false)
+const isLoaded = ref(false)
+
+// Repository Management
+interface GithubRepo {
+	id: number;
+	name: string;
+	full_name: string;
+	private: boolean;
+}
+const githubRepos = ref<GithubRepo[]>([])
+const trackedRepoIds = ref<Set<string>>(new Set())
+const isLoadingRepos = ref(false)
+
+const fetchRepositories = async () => {
+	if (!authStore.user?.uid || !authStore.isGithubConnected) return;
+	isLoadingRepos.value = true;
+	try {
+		const userDoc = await getDoc(doc(db, 'users', authStore.user.uid))
+		const token = userDoc.data()?.githubAccessToken
+
+		if (!token) return;
+
+		const response = await fetch('https://api.github.com/user/repos?sort=updated&per_page=30', {
+			headers: {
+				Authorization: `Bearer ${token}`,
+				Accept: 'application/vnd.github.v3+json'
+			}
+		});
+		if (!response.ok) throw new Error("Failed to fetch repositories")
+
+		githubRepos.value = await response.json();
+
+		// Fetch Tracked Repos from Firestore
+		const trackedSnap = await getDocs(collection(db, `users/${authStore.user.uid}/trackedRepos`))
+		const tracked = new Set<string>()
+		trackedSnap.forEach(doc => tracked.add(doc.data().repoName))
+		trackedRepoIds.value = tracked
+	} catch (err: unknown) {
+		console.error("Error fetching repositories:", err)
+	} finally {
+		isLoadingRepos.value = false;
+	}
+}
+
+const toggleRepoTracking = async (repoName: string) => {
+	if (!authStore.user?.uid) return;
+
+	// In vue templates, sets are tricky, so we create a new Set to trigger reactivity
+	const newSet = new Set(trackedRepoIds.value)
+
+	const sanitizedRepoName = repoName.replace(/\//g, '_');
+	const repoRef = doc(db, `users/${authStore.user.uid}/trackedRepos`, sanitizedRepoName);
+
+	try {
+		if (newSet.has(repoName)) {
+			await deleteDoc(repoRef);
+			newSet.delete(repoName);
+		} else {
+			await setDoc(repoRef, {
+				repoName,
+				addedAt: new Date()
+			});
+			newSet.add(repoName);
+		}
+		trackedRepoIds.value = newSet;
+	} catch (err) {
+		console.error("Error toggling repo tracking:", err)
+		alert("Failed to update tracking status")
+	}
+}
+
+watch([() => authStore.user?.uid, () => authStore.isGithubConnected], ([uid, isConnected]) => {
+	if (uid && isConnected) {
+		fetchRepositories()
+	} else {
+		githubRepos.value = []
+		trackedRepoIds.value.clear()
+	}
+}, { immediate: true })
+
+onMounted(async () => {
+	if (authStore.user?.uid) {
+		const docRef = doc(db, `users/${authStore.user.uid}/settings`, 'config')
+		const docSnap = await getDoc(docRef)
+		if (docSnap.exists()) {
+			config.value = { ...config.value, ...docSnap.data() } as typeof config.value
+		}
+		isLoaded.value = true
+	}
+})
+
+// Optional: watch user changes if component stays mounted while auth changes
+watch(() => authStore.user?.uid, async (newUid) => {
+	if (newUid) {
+		const docRef = doc(db, `users/${newUid}/settings`, 'config')
+		const docSnap = await getDoc(docRef)
+		if (docSnap.exists()) {
+			config.value = { ...config.value, ...docSnap.data() } as typeof config.value
+		}
+		isLoaded.value = true
+	} else {
+		isLoaded.value = false
+	}
+})
+
 const saveSettings = async () => {
-	// TODO: Save to firestore
-	console.log("Saving settings...", config.value)
+	if (!authStore.user?.uid) return
+	isSaving.value = true
+	try {
+		const docRef = doc(db, `users/${authStore.user.uid}/settings`, 'config')
+		await setDoc(docRef, config.value, { merge: true })
+		// Optional: add a tiny toast or simple alert for feedback
+		// alert("Settings saved successfully!")
+	} catch (error) {
+		console.error("Failed to save settings:", error)
+		alert("Failed to save settings")
+	} finally {
+		isSaving.value = false
+	}
 }
 
 const handleConnectGithub = async () => {
 	try {
 		await authStore.connectGithub()
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error(error)
-		alert(error?.message ?? "Failed to connect GitHub account.")
+		const msg = error instanceof Error ? error.message : "Failed to connect GitHub account."
+		alert(msg)
 	}
 }
 
 const handleDisconnectGithub = async () => {
 	try {
 		await authStore.disconnectGithub()
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error(error)
-		alert(error?.message ?? "Failed to disconnect GitHub account.")
+		const msg = error instanceof Error ? error.message : "Failed to disconnect GitHub account."
+		alert(msg)
 	}
 }
 </script>
@@ -73,6 +194,38 @@ const handleDisconnectGithub = async () => {
 						<Button v-else variant="outline" size="sm" :disabled="authStore.githubLoading"
 							@click="handleConnectGithub">{{ authStore.githubLoading ? 'Connecting...' : 'Connect'
 							}}</Button>
+					</div>
+				</div>
+			</div>
+		</Card>
+
+		<!-- Repository Tracking -->
+		<Card v-if="authStore.isGithubConnected">
+			<div class="p-6 space-y-4">
+				<div class="flex items-center justify-between">
+					<div>
+						<h3 class="text-lg font-semibold dark:text-white">Tracked Repositories</h3>
+						<p class="text-sm text-gray-500 dark:text-gray-400">Select which repositories you want to track
+							for automated social media posts. <span
+								class="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-xs ml-1">Changes save
+								automatically</span></p>
+					</div>
+				</div>
+
+				<div v-if="isLoadingRepos" class="text-sm text-gray-500">Loading repositories...</div>
+				<div v-else-if="githubRepos.length === 0" class="text-sm text-gray-500">No repositories found or token
+					lacks permissions.</div>
+				<div v-else
+					class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto pr-2 rounded-lg border border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 p-2">
+					<div v-for="repo in githubRepos" :key="repo.id"
+						class="flex items-center gap-3 p-2 hover:bg-white dark:hover:bg-gray-700 rounded transition-colors w-full overflow-hidden">
+						<div class="flex items-center gap-3 flex-1 min-w-0">
+							<CheckboxInput :modelValue="trackedRepoIds.has(repo.full_name)"
+								@update:modelValue="toggleRepoTracking(repo.full_name)" :text="repo.name"
+								class="truncate" />
+						</div>
+						<span v-if="repo.private"
+							class="shrink-0 ml-auto text-xs bg-gray-200 dark:bg-gray-600 px-1.5 py-0.5 rounded text-gray-600 dark:text-gray-300">Private</span>
 					</div>
 				</div>
 			</div>
@@ -119,7 +272,9 @@ const handleDisconnectGithub = async () => {
 
 		<div class="flex justify-end gap-3 mt-4">
 			<Button variant="outline">Cancel</Button>
-			<Button variant="primary" @click="saveSettings">Save Changes</Button>
+			<Button variant="primary" :disabled="isSaving || !isLoaded" @click="saveSettings">
+				{{ isSaving ? 'Saving...' : 'Save Changes' }}
+			</Button>
 		</div>
 	</div>
 </template>

@@ -45,22 +45,72 @@ export const handleGithubRelease = onRequest(async (req, res) => {
 		const settingsSnap = await db.collection(`users/${userId}/settings`).doc('config').get();
 		const personaVoice = settingsSnap.exists ? settingsSnap.data()?.personaVoice : 'Write a general tech post.';
 
-		const generated = await generateSocialPosts(releaseNotes, repoName, version, personaVoice);
+		const sanitizedRepoName = repoName.replace(/\//g, '_');
+		const trackedRepoRef = db.doc(`users/${userId}/trackedRepos/${sanitizedRepoName}`);
+		const trackedRepoSnap = await trackedRepoRef.get();
+
+		let isIntro = false;
+		let isBatched = false;
+		let finalReleaseNotes = releaseNotes;
+		const existingDraftsToDiscard: string[] = [];
+
+		if (!trackedRepoSnap.exists) {
+			// First time seeing this repo -> Intro post
+			isIntro = true;
+			await trackedRepoRef.set({
+				repoName,
+				addedAt: admin.firestore.FieldValue.serverTimestamp()
+			});
+		} else {
+			// Already tracked, check for existing drafts to batch
+			const existingDraftsSnap = await db.collection(`users/${userId}/drafts`)
+				.where('repoName', '==', repoName)
+				.where('status', '==', 'Draft')
+				.get();
+
+			if (!existingDraftsSnap.empty) {
+				isBatched = true;
+				const notes: string[] = [];
+				existingDraftsSnap.forEach(doc => {
+					existingDraftsToDiscard.push(doc.id);
+					const data = doc.data();
+					notes.push(`=== ${data.version} ===\n${data.releaseNotes}`);
+				});
+				notes.push(`=== ${version} ===\n${releaseNotes}`);
+				finalReleaseNotes = notes.join('\n\n');
+			}
+		}
+
+		console.log(`Generating posts for ${repoName} ${version} | isIntro: ${isIntro} | isBatched: ${isBatched}`);
+		const generated = await generateSocialPosts(finalReleaseNotes, repoName, version, personaVoice, { isIntro, isBatched });
 
 		const draftData = {
 			repoName,
-			version,
-			releaseNotes,
+			version: isBatched ? 'Batched Update' : version,
+			releaseNotes: finalReleaseNotes,
 			xPost: generated.xPost,
 			linkedinPost: generated.linkedinPost,
 			extractedImage: generated.extractedImage,
+			isIntro,
+			isBatched,
 			status: 'Draft',
 			createdAt: admin.firestore.FieldValue.serverTimestamp(),
 		};
 
 		const draftRef = await db.collection(`users/${userId}/drafts`).add(draftData);
 
-		console.log(`Generated and saved draft ${draftRef.id} for ${repoName} ${version}`);
+		// Discard old drafts if batched
+		if (existingDraftsToDiscard.length > 0) {
+			const batch = db.batch();
+			existingDraftsToDiscard.forEach(id => {
+				const oldRef = db.doc(`users/${userId}/drafts/${id}`);
+				batch.update(oldRef, { status: 'Batched/Discarded' });
+			});
+			await batch.commit();
+			console.log(`Discarded ${existingDraftsToDiscard.length} old drafts into the new batched edit.`);
+		}
+
+		console.log(`Generated and saved draft ${draftRef.id} for ${repoName}`);
 		res.status(200).send('Webhook processed successfully');
 	} catch (error) {
 		console.error('Webhook processing failed:', error);

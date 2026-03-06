@@ -1,99 +1,236 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { Card, Button } from 'pilotui/elements'
 import { TextArea } from 'pilotui/form'
+import { useAuthStore } from '../stores/auth'
+import { getFirestore, collection, query, where, getDocs, doc, updateDoc, orderBy } from 'firebase/firestore'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 
-// Mock draft data for UI
-const draft = ref({
-	id: 'd1',
-	repoName: 'solodev/project',
-	version: 'v1.4.0',
-	description: '# Added amazing capabilities!\n\nThis release introduces the highly anticipated refactoring process...',
-	xPost: "Just shipped v1.4.0 for solodev/project 🚀 Finally cracked the refactoring! The DX is now 100x better. Wait till you see the new plugins architecture.\n\nLink below! 👇",
-	linkedinPost: "I am thrilled to announce v1.4.0 is out! \n\nBuilding in public has its moments, but dealing with legacy code always proves to be a massive learning curve. This week, I completely overhauled the plugin architecture, giving developers the freedom they were asking for.\n\nLet me know your thoughts!",
-	extractedImage: "https://via.placeholder.com/800x400.png?text=Release+UI+Screenshot"
+const authStore = useAuthStore()
+const db = getFirestore()
+
+// Draft data model
+interface Draft {
+	id: string;
+	repoName: string;
+	version: string;
+	releaseNotes: string;
+	xPost: string;
+	linkedinPost: string;
+	extractedImage: string | null;
+	status: string;
+}
+
+const drafts = ref<Draft[]>([])
+const currentDraftIndex = ref(0)
+const selectedDraft = ref<Draft | null>(null)
+const isLoading = ref(true)
+const isPublishing = ref(false)
+
+const fetchDrafts = async () => {
+	if (!authStore.user?.uid) return
+	isLoading.value = true
+	try {
+		const draftsRef = collection(db, `users/${authStore.user.uid}/drafts`)
+		// Fetch only 'Draft' status, ordered by creation (newest first)
+		const q = query(draftsRef, where('status', '==', 'Draft'), orderBy('createdAt', 'desc'))
+		const querySnapshot = await getDocs(q)
+		
+		const fetchedDrafts: Draft[] = []
+		querySnapshot.forEach((doc) => {
+			fetchedDrafts.push({ id: doc.id, ...doc.data() } as Draft)
+		})
+		
+		drafts.value = fetchedDrafts
+		if (fetchedDrafts.length > 0) {
+			currentDraftIndex.value = 0
+			selectedDraft.value = fetchedDrafts[0] ?? null
+		} else {
+			selectedDraft.value = null
+		}
+	} catch (error: any) {
+		// Depending on Firestore index, the orderBy might fail initially requiring a custom index.
+		// If it fails with index error, it'll show in console.
+		console.error("Failed to fetch drafts:", error)
+	} finally {
+		isLoading.value = false
+	}
+}
+
+onMounted(() => {
+	fetchDrafts()
 })
 
-const publish = () => {
-	console.log("Publishing to network...")
+watch(() => authStore.user?.uid, (newUid) => {
+	if (newUid) {
+		fetchDrafts()
+	} else {
+		drafts.value = []
+		selectedDraft.value = null
+	}
+})
+
+const nextDraft = () => {
+	if (currentDraftIndex.value < drafts.value.length - 1) {
+		currentDraftIndex.value++
+		selectedDraft.value = drafts.value[currentDraftIndex.value] ?? null
+	}
+}
+
+const updateDraftStatus = async (id: string, newStatus: string) => {
+    if(!authStore.user?.uid) return;
+    try {
+        const docRef = doc(db, `users/${authStore.user.uid}/drafts`, id)
+		await updateDoc(docRef, { status: newStatus })
+		// Remove from local list
+		drafts.value = drafts.value.filter(d => d.id !== id)
+		if (drafts.value.length > 0) {
+            // Adjust index if necessary
+            currentDraftIndex.value = Math.min(currentDraftIndex.value, drafts.value.length - 1)
+			selectedDraft.value = drafts.value[currentDraftIndex.value] ?? null
+		} else {
+			selectedDraft.value = null
+		}
+    } catch(err) {
+        console.error("Error updating draft status:", err)
+    }
+}
+
+const discardDraft = async () => {
+	if (!selectedDraft.value) return
+    if(confirm('Are you sure you want to discard this draft?')) {
+	    await updateDraftStatus(selectedDraft.value.id, 'Discarded')
+    }
+}
+
+const publish = async () => {
+	if (!selectedDraft.value) return
+	isPublishing.value = true
+	try {
+        const functions = getFunctions()
+        const publishDraft = httpsCallable(functions, 'publishDraft')
+        
+        console.log("Calling publishDraft function...")
+        const result = await publishDraft({ draftId: selectedDraft.value.id })
+        
+        console.log("Publish result:", result.data)
+        // The Cloud Function updates the document status, but let's remove it from the local list
+        drafts.value = drafts.value.filter(d => d.id !== selectedDraft.value?.id)
+        
+        if (drafts.value.length > 0) {
+            currentDraftIndex.value = Math.min(currentDraftIndex.value, drafts.value.length - 1)
+            selectedDraft.value = drafts.value[currentDraftIndex.value] ?? null
+        } else {
+            selectedDraft.value = null
+        }
+        
+        alert('Published successfully!')
+	} catch (error: any) {
+		console.error("Publish failed", error)
+		alert(`Failed to publish: ${error.message}`)
+	} finally {
+		isPublishing.value = false
+	}
 }
 </script>
 
 <template>
 	<div class="max-w-7xl mx-auto p-4 h-[calc(100vh-80px)] overflow-hidden flex flex-col">
 
-		<div class="flex items-center justify-between mb-4">
-			<div>
-				<h2 class="text-2xl font-bold dark:text-white">Drafts Inbox</h2>
-				<p class="text-gray-500 dark:text-gray-400">{{ draft.repoName }} {{ draft.version }}</p>
-			</div>
-			<div class="flex gap-2">
-				<Button variant="outline">Discard</Button>
-				<Button variant="primary" @click="publish">Approve & Publish</Button>
-			</div>
+		<div v-if="isLoading" class="flex-1 flex items-center justify-center">
+			<p class="text-gray-500">Loading drafts...</p>
 		</div>
 
-		<!-- Side-by-Side Editor -->
-		<div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-6 overflow-hidden">
-			<!-- Left Column: Raw Input -->
-			<Card class="flex flex-col h-full overflow-hidden">
-				<div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 shrink-0">
-					<h3 class="font-semibold dark:text-white">Original Release Notes</h3>
-				</div>
-				<div class="p-4 overflow-y-auto flex-1">
-					<pre
-						class="bg-gray-100 dark:bg-gray-900 p-4 rounded text-sm whitespace-pre-wrap dark:text-gray-300 font-mono">{{ draft.description }}</pre>
+		<div v-else-if="!selectedDraft" class="flex-1 flex flex-col items-center justify-center">
+			<div class="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
+				<svg class="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+				</svg>
+			</div>
+			<h2 class="text-xl font-semibold dark:text-white mb-2">Inbox Zero</h2>
+			<p class="text-gray-500 dark:text-gray-400">You're all caught up! Ship some code to see new drafts here.</p>
+		</div>
 
-					<div class="mt-6">
-						<h4 class="font-medium text-sm text-gray-500 mb-2">Extracted Media</h4>
-						<div
-							class="relative rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 group">
-							<img :src="draft.extractedImage" class="w-full h-auto object-cover" />
+		<template v-else>
+			<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+				<div>
+					<h2 class="text-2xl font-bold dark:text-white">Drafts Inbox</h2>
+					<p class="text-gray-500 dark:text-gray-400 font-medium">
+                        {{ selectedDraft.repoName }} <span class="text-gray-400 mx-1">•</span> {{ selectedDraft.version }}
+                        <span class="text-xs ml-2 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-full">{{ currentDraftIndex + 1 }} of {{ drafts.length }}</span>
+                    </p>
+				</div>
+				<div class="flex gap-2">
+					<Button variant="outline" @click="discardDraft">Discard</Button>
+					<Button variant="primary" :disabled="isPublishing" @click="publish">
+						{{ isPublishing ? 'Publishing...' : 'Approve & Publish' }}
+					</Button>
+                    <Button v-if="drafts.length > 1" variant="outline" title="Skip for now" @click="nextDraft">Next &rarr;</Button>
+				</div>
+			</div>
+
+			<!-- Side-by-Side Editor -->
+			<div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-6 overflow-hidden">
+				<!-- Left Column: Raw Input -->
+				<Card class="flex flex-col h-full overflow-hidden">
+					<div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 shrink-0">
+						<h3 class="font-semibold dark:text-white">Original Release Notes</h3>
+					</div>
+					<div class="p-4 overflow-y-auto flex-1">
+						<pre
+							class="bg-gray-100 dark:bg-gray-900 p-4 rounded text-sm whitespace-pre-wrap dark:text-gray-300 font-mono">{{ selectedDraft.releaseNotes }}</pre>
+
+						<div class="mt-6" v-if="selectedDraft.extractedImage">
+							<h4 class="font-medium text-sm text-gray-500 mb-2">Extracted Media</h4>
 							<div
-								class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-								<Button variant="secondary" size="sm">Replace Image</Button>
+								class="relative rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 group bg-gray-100 flex items-center justify-center">
+								<img :src="selectedDraft.extractedImage" class="w-full h-auto object-cover max-h-64" />
+								<div
+									class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+									<Button variant="secondary" size="sm">Replace Image</Button>
+								</div>
 							</div>
 						</div>
 					</div>
+				</Card>
+
+				<!-- Right Column: Editor -->
+				<div class="flex flex-col space-y-6 overflow-y-auto pr-2 pb-4">
+					<Card class="shrink-0">
+						<div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-[#E1EEF6] dark:bg-[#15202b]">
+							<h3 class="font-semibold text-[#1DA1F2] flex items-center gap-2">
+								<svg class="h-5 w-5 fill-current" viewBox="0 0 24 24">
+									<path
+										d="M23.643 4.937c-.835.37-1.732.62-2.675.733.962-.576 1.7-1.49 2.048-2.578-.9.534-1.897.922-2.958 1.13-.85-.904-2.06-1.47-3.4-1.47-2.572 0-4.658 2.086-4.658 4.66 0 .364.042.718.12 1.06-3.873-.195-7.304-2.05-9.602-4.868-.4.69-.63 1.49-.63 2.342 0 1.616.823 3.043 2.072 3.878-.764-.025-1.482-.234-2.11-.583v.06c0 2.257 1.605 4.14 3.737 4.568-.392.106-.803.162-1.227.162-.3 0-.593-.028-.877-.082.593 1.85 2.313 3.198 4.352 3.234-1.595 1.25-3.604 1.995-5.786 1.995-.376 0-.747-.022-1.112-.065 2.062 1.323 4.51 2.093 7.14 2.093 8.57 0 13.255-7.098 13.255-13.254 0-.2-.005-.402-.014-.602.91-.658 1.7-1.477 2.323-2.41z">
+									</path>
+								</svg>
+								X Draft
+							</h3>
+						</div>
+						<div class="p-4">
+							<TextArea v-model="selectedDraft.xPost" rows="4" class="w-full" />
+							<div class="text-right text-xs text-gray-500 mt-2">{{ selectedDraft.xPost?.length || 0 }} / 280</div>
+						</div>
+					</Card>
+
+					<Card class="shrink-0">
+						<div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-[#E8F3F9] dark:bg-[#00283F]">
+							<h3 class="font-semibold text-[#0A66C2] flex items-center gap-2">
+								<svg class="h-5 w-5 fill-current" viewBox="0 0 24 24">
+									<path
+										d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+								</svg>
+								LinkedIn Draft
+							</h3>
+						</div>
+						<div class="p-4">
+							<TextArea v-model="selectedDraft.linkedinPost" rows="8" class="w-full" />
+							<div class="text-right text-xs text-gray-500 mt-2">{{ selectedDraft.linkedinPost?.length || 0 }} / 3000</div>
+						</div>
+					</Card>
 				</div>
-			</Card>
-
-			<!-- Right Column: Editor -->
-			<div class="flex flex-col space-y-6 overflow-y-auto pr-2 pb-4">
-				<Card class="shrink-0">
-					<div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-[#E1EEF6] dark:bg-[#15202b]">
-						<h3 class="font-semibold text-[#1DA1F2] flex items-center gap-2">
-							<svg class="h-5 w-5 fill-current" viewBox="0 0 24 24">
-								<path
-									d="M23.643 4.937c-.835.37-1.732.62-2.675.733.962-.576 1.7-1.49 2.048-2.578-.9.534-1.897.922-2.958 1.13-.85-.904-2.06-1.47-3.4-1.47-2.572 0-4.658 2.086-4.658 4.66 0 .364.042.718.12 1.06-3.873-.195-7.304-2.05-9.602-4.868-.4.69-.63 1.49-.63 2.342 0 1.616.823 3.043 2.072 3.878-.764-.025-1.482-.234-2.11-.583v.06c0 2.257 1.605 4.14 3.737 4.568-.392.106-.803.162-1.227.162-.3 0-.593-.028-.877-.082.593 1.85 2.313 3.198 4.352 3.234-1.595 1.25-3.604 1.995-5.786 1.995-.376 0-.747-.022-1.112-.065 2.062 1.323 4.51 2.093 7.14 2.093 8.57 0 13.255-7.098 13.255-13.254 0-.2-.005-.402-.014-.602.91-.658 1.7-1.477 2.323-2.41z">
-								</path>
-							</svg>
-							X Draft
-						</h3>
-					</div>
-					<div class="p-4">
-						<TextArea v-model="draft.xPost" rows="4" class="w-full" />
-						<div class="text-right text-xs text-gray-500 mt-2">{{ draft.xPost.length }} / 280</div>
-					</div>
-				</Card>
-
-				<Card class="shrink-0">
-					<div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-[#E8F3F9] dark:bg-[#00283F]">
-						<h3 class="font-semibold text-[#0A66C2] flex items-center gap-2">
-							<svg class="h-5 w-5 fill-current" viewBox="0 0 24 24">
-								<path
-									d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
-							</svg>
-							LinkedIn Draft
-						</h3>
-					</div>
-					<div class="p-4">
-						<TextArea v-model="draft.linkedinPost" rows="8" class="w-full" />
-						<div class="text-right text-xs text-gray-500 mt-2">{{ draft.linkedinPost.length }} / 3000</div>
-					</div>
-				</Card>
 			</div>
-		</div>
+		</template>
 
 	</div>
 </template>
