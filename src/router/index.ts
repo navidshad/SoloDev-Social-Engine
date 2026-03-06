@@ -32,6 +32,11 @@ const router = createRouter({
           component: InboxView
         },
         {
+          path: 'inbox/:id',
+          name: 'Draft Detail',
+          component: () => import('../views/DraftDetailView.vue')
+        },
+        {
           path: 'settings',
           name: 'Settings',
           component: SettingsView

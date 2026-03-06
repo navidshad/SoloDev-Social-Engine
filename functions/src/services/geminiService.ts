@@ -83,3 +83,50 @@ Write a storytelling post (up to 3,000 characters). Expand on the problem this r
 		throw error;
 	}
 }
+export async function refineSocialPost(
+	currentText: string,
+	platform: 'x' | 'linkedin',
+	prompt: string,
+	personaVoice: string,
+	context: { repoName: string, version: string, releaseNotes: string }
+) {
+	const apiKey = process.env.GEMINI_API_KEY;
+	if (!apiKey) {
+		throw new Error("GEMINI_API_KEY is not set.");
+	}
+
+	const ai = new GoogleGenAI({ apiKey });
+
+	const maxLength = platform === 'x' ? 280 : 3000;
+	const platformContext = platform === 'x' ? 'X (formerly Twitter) tweet' : 'LinkedIn post';
+
+	const refinementPrompt = `You are a highly skilled developer refining social media posts for your brand.
+Persona: "${personaVoice}"
+Context: Repository ${context.repoName}, Version ${context.version}.
+Release Notes for reference:
+${context.releaseNotes}
+
+Current ${platformContext} text:
+"${currentText}"
+
+User Request for revision:
+"${prompt}"
+
+Instructions:
+1. Rewrite the ${platformContext} following the User Request while maintaining the established Persona.
+2. Keep it under ${maxLength} characters.
+3. If the platform is X, ensure it has a strong hook.
+4. Output ONLY the new text for the post, with no other commentary.`;
+
+	try {
+		const response = await ai.models.generateContent({
+			model: 'gemini-2.5-flash',
+			contents: refinementPrompt,
+		});
+
+		return response.text;
+	} catch (error) {
+		console.error(`Error refining ${platform} post with Gemini`, error);
+		throw error;
+	}
+}

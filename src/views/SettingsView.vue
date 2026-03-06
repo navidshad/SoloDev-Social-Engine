@@ -268,7 +268,7 @@ const handleDisconnectGithub = async () => {
 								class="text-xs bg-gray-200 dark:bg-gray-600 px-1.5 py-0.5 rounded text-gray-600 dark:text-gray-300">Private</span>
 							<Button
 								v-if="trackedRepoIds.has(repo.full_name) && repoHistoryMap[repo.full_name] === false"
-								size="sm" variant="secondary" class="!py-1 !px-2 text-xs h-auto"
+								size="sm" variant="secondary" class="py-1! px-2! text-xs h-auto"
 								:disabled="isGeneratingMap[repo.full_name]"
 								@click="generateInitialPost(repo.full_name)">
 								{{ isGeneratingMap[repo.full_name] ? 'Generating...' : '✨ Generate Initial Post' }}
