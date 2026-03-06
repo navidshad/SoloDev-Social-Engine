@@ -52,6 +52,7 @@ export const handleGithubRelease = onRequest(async (req, res) => {
 		let isIntro = false;
 		let isBatched = false;
 		let finalReleaseNotes = releaseNotes;
+		let includedReleases: string[] = [version];
 		const existingDraftsToDiscard: string[] = [];
 
 		if (!trackedRepoSnap.exists) {
@@ -74,10 +75,18 @@ export const handleGithubRelease = onRequest(async (req, res) => {
 				existingDraftsSnap.forEach(doc => {
 					existingDraftsToDiscard.push(doc.id);
 					const data = doc.data();
-					notes.push(`=== ${data.version} ===\n${data.releaseNotes}`);
+					notes.push(`=== ${data.version || 'Batched Update'} ===\n${data.releaseNotes}`);
+					if (data.includedReleases) {
+						includedReleases.push(...data.includedReleases);
+					} else if (data.version) {
+						includedReleases.push(data.version);
+					}
 				});
 				notes.push(`=== ${version} ===\n${releaseNotes}`);
 				finalReleaseNotes = notes.join('\n\n');
+
+				// Deduplicate just in case
+				includedReleases = [...new Set(includedReleases)];
 			}
 		}
 
@@ -87,6 +96,7 @@ export const handleGithubRelease = onRequest(async (req, res) => {
 		const draftData = {
 			repoName,
 			version: isBatched ? 'Batched Update' : version,
+			includedReleases,
 			releaseNotes: finalReleaseNotes,
 			xPost: generated.xPost,
 			linkedinPost: generated.linkedinPost,

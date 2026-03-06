@@ -6,6 +6,7 @@ import AppLayout from '../layouts/AppLayout.vue'
 import LoginView from '../views/LoginView.vue'
 import InboxView from '../views/InboxView.vue'
 import SettingsView from '../views/SettingsView.vue'
+import SentLogView from '../views/SentLogView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -34,6 +35,11 @@ const router = createRouter({
           path: 'settings',
           name: 'Settings',
           component: SettingsView
+        },
+        {
+          path: 'sent',
+          name: 'Sent Log',
+          component: SentLogView
         }
       ]
     }

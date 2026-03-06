@@ -4,7 +4,8 @@ import { Card } from 'pilotui/elements'
 import { Input, TextArea, CheckboxInput } from 'pilotui/form'
 import { Button } from 'pilotui/elements'
 import { useAuthStore } from '../stores/auth'
-import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc } from 'firebase/firestore'
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, query, where, limit } from 'firebase/firestore'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 
 const authStore = useAuthStore()
 const db = getFirestore()
@@ -55,10 +56,47 @@ const fetchRepositories = async () => {
 		const tracked = new Set<string>()
 		trackedSnap.forEach(doc => tracked.add(doc.data().repoName))
 		trackedRepoIds.value = tracked
+
+		// Check history for all tracked repos
+		await checkRepoHistories(Array.from(tracked))
 	} catch (err: unknown) {
 		console.error("Error fetching repositories:", err)
 	} finally {
 		isLoadingRepos.value = false;
+	}
+}
+
+const repoHistoryMap = ref<Record<string, boolean>>({})
+const isGeneratingMap = ref<Record<string, boolean>>({})
+
+const checkRepoHistories = async (repoNames: string[]) => {
+	if (!authStore.user?.uid) return;
+	const promises = repoNames.map(async (repoName) => {
+		const q = query(
+			collection(db, `users/${authStore.user?.uid}/drafts`),
+			where('repoName', '==', repoName),
+			limit(1)
+		)
+		const snap = await getDocs(q)
+		repoHistoryMap.value[repoName] = !snap.empty
+	})
+	await Promise.all(promises)
+}
+
+const generateInitialPost = async (repoName: string) => {
+	if (!authStore.user?.uid) return;
+	isGeneratingMap.value[repoName] = true
+	try {
+		const functions = getFunctions()
+		const callFn = httpsCallable(functions, 'generateInitialPost')
+		await callFn({ repoName })
+		alert("Initial draft generated! Check your Inbox.")
+		repoHistoryMap.value[repoName] = true
+	} catch (err: any) {
+		console.error("Error generating initial post:", err)
+		alert(`Failed to generate: ${err.message}`)
+	} finally {
+		isGeneratingMap.value[repoName] = false
 	}
 }
 
@@ -81,6 +119,7 @@ const toggleRepoTracking = async (repoName: string) => {
 				addedAt: new Date()
 			});
 			newSet.add(repoName);
+			await checkRepoHistories([repoName]);
 		}
 		trackedRepoIds.value = newSet;
 	} catch (err) {
@@ -224,8 +263,17 @@ const handleDisconnectGithub = async () => {
 								@update:modelValue="toggleRepoTracking(repo.full_name)" :text="repo.name"
 								class="truncate" />
 						</div>
-						<span v-if="repo.private"
-							class="shrink-0 ml-auto text-xs bg-gray-200 dark:bg-gray-600 px-1.5 py-0.5 rounded text-gray-600 dark:text-gray-300">Private</span>
+						<div class="flex items-center gap-2 shrink-0 ml-auto">
+							<span v-if="repo.private"
+								class="text-xs bg-gray-200 dark:bg-gray-600 px-1.5 py-0.5 rounded text-gray-600 dark:text-gray-300">Private</span>
+							<Button
+								v-if="trackedRepoIds.has(repo.full_name) && repoHistoryMap[repo.full_name] === false"
+								size="sm" variant="secondary" class="!py-1 !px-2 text-xs h-auto"
+								:disabled="isGeneratingMap[repo.full_name]"
+								@click="generateInitialPost(repo.full_name)">
+								{{ isGeneratingMap[repo.full_name] ? 'Generating...' : '✨ Generate Initial Post' }}
+							</Button>
+						</div>
 					</div>
 				</div>
 			</div>

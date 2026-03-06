@@ -16,6 +16,11 @@ const menuItems = [
 				to: '/inbox'
 			},
 			{
+				title: 'Sent Log',
+				icon: 'icon-clock',
+				to: '/sent'
+			},
+			{
 				title: 'Settings',
 				icon: 'icon-settings',
 				to: '/settings'

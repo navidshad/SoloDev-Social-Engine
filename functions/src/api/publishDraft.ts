@@ -3,7 +3,7 @@ import * as admin from "firebase-admin";
 import { publishToX } from "../services/xService";
 import { publishToLinkedIn } from "../services/linkedinService";
 
-export const publishDraft = onCall(async (request) => {
+export const publishDraft = onCall({ cors: true }, async (request) => {
 	// Authentication check
 	if (!request.auth) {
 		throw new HttpsError("unauthenticated", "You must be logged in to publish drafts.");
