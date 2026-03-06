@@ -19,6 +19,9 @@ export const useAuthStore = defineStore('auth', () => {
 	const xUsername = ref<string | null>(null)
 	const xLoading = ref(false)
 
+	const isLinkedInConnected = ref(false)
+	const linkedInUsername = ref<string | null>(null)
+
 	// Helper to sync GitHub state from the current Firebase user's providerData
 	function syncAuthState(currentUser: User | null) {
 		const githubProvider = currentUser?.providerData.find(p => p.providerId === 'github.com')
@@ -33,12 +36,16 @@ export const useAuthStore = defineStore('auth', () => {
 						const data = docSnap.data()
 						isXConnected.value = !!data.xAccessToken
 						xUsername.value = data.xUsername ?? null
+						isLinkedInConnected.value = !!data.linkedInAccessToken
+						linkedInUsername.value = data.linkedInUsername ?? null
 					}
 				})
 			})
 		} else {
 			isXConnected.value = false
 			xUsername.value = null
+			isLinkedInConnected.value = false
+			linkedInUsername.value = null
 		}
 	}
 
@@ -151,6 +158,11 @@ export const useAuthStore = defineStore('auth', () => {
 		xUsername.value = username
 	}
 
+	async function setLinkedInConnected(connected: boolean, username: string | null = null) {
+		isLinkedInConnected.value = connected
+		linkedInUsername.value = username
+	}
+
 	async function logout() {
 		try {
 			await signOut(auth)
@@ -168,10 +180,13 @@ export const useAuthStore = defineStore('auth', () => {
 		isXConnected,
 		xUsername,
 		xLoading,
+		isLinkedInConnected,
+		linkedInUsername,
 		loginWithGoogle,
 		connectGithub,
 		disconnectGithub,
 		setXConnected,
+		setLinkedInConnected,
 		logout
 	}
 })

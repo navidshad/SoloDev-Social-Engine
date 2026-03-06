@@ -8,5 +8,6 @@ import { generateInitialPost } from "./api/generateInitialPost";
 import { refineDraft } from "./api/refineDraft";
 import { toggleRepoWebhook } from "./api/toggleRepoWebhook";
 import { testXCredentials } from "./api/testXCredentials";
+import { testLinkedInCredentials } from "./api/testLinkedInCredentials";
 
-export { handleGithubRelease, publishDraft, generateInitialPost, refineDraft, toggleRepoWebhook, testXCredentials };
+export { handleGithubRelease, publishDraft, generateInitialPost, refineDraft, toggleRepoWebhook, testXCredentials, testLinkedInCredentials };

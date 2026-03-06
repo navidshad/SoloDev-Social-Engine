@@ -13,8 +13,6 @@ const authStore = useAuthStore()
 const db = getFirestore()
 
 const config = ref({
-	xApiKey: '',
-	linkedInToken: '',
 	personaVoice: 'I write in a "build in public" style. I am humble but authoritative. I rarely use hashtags on X. I like to focus on the "why" behind the code. Use a conversational tone.',
 	autoPostEnabled: false,
 	geminiApiKey: ''
@@ -179,8 +177,7 @@ const saveSettings = async () => {
 	isSaving.value = true
 	try {
 		const docRef = doc(db, `users/${authStore.user.uid}/settings`, 'config')
-		// We remove xApiKey and linkedInToken from the save payload since they are now handled by Auth
-		const { xApiKey, linkedInToken, ...restConfig } = config.value as any;
+		const { ...restConfig } = config.value as any;
 		await setDoc(docRef, restConfig, { merge: true })
 		toastSuccess("Settings saved successfully!")
 	} catch (error: any) {
@@ -277,6 +274,61 @@ const handleDisconnectX = async () => {
 		testingX.value = false;
 	}
 }
+
+const isLinkedInModalOpen = ref(false)
+const testingLinkedIn = ref(false)
+const linkedInToken = ref('')
+
+const handleTestAndSaveLinkedIn = async (toggleModal: (state: boolean) => void) => {
+	if (!authStore.user?.uid || !linkedInToken.value) return;
+	testingLinkedIn.value = true;
+	try {
+		const functions = getFunctions()
+		const testFn = httpsCallable<{ accessToken: string }, { success: boolean, name: string }>(functions, 'testLinkedInCredentials')
+		const result = await testFn({ accessToken: linkedInToken.value })
+
+		if (result.data.success) {
+			const username = result.data.name;
+			const userRef = doc(db, 'users', authStore.user.uid);
+			await setDoc(userRef, {
+				linkedInAccessToken: linkedInToken.value,
+				linkedInUsername: username,
+				linkedInConnectedAt: new Date(),
+			}, { merge: true });
+
+			authStore.setLinkedInConnected(true, username);
+			toastSuccess("LinkedIn Account successfully connected!")
+			toggleModal(false)
+			linkedInToken.value = ''
+		}
+	} catch (error: any) {
+		console.error("Test LinkedIn token failed:", error)
+		toastError(`Failed to authenticate with LinkedIn: ${error.message}`)
+	} finally {
+		testingLinkedIn.value = false;
+	}
+}
+
+const handleDisconnectLinkedIn = async () => {
+	if (!authStore.user?.uid) return;
+	testingLinkedIn.value = true;
+	try {
+		const userRef = doc(db, 'users', authStore.user.uid);
+		const { updateDoc, deleteField } = await import('firebase/firestore')
+		await updateDoc(userRef, {
+			linkedInAccessToken: deleteField(),
+			linkedInUsername: deleteField(),
+			linkedInConnectedAt: deleteField(),
+		});
+		authStore.setLinkedInConnected(false, null);
+		toastSuccess("LinkedIn Account disconnected.")
+	} catch (error: any) {
+		console.error("LinkedIn Disconnect failed:", error)
+		toastError(`Failed to disconnect LinkedIn account: ${error.message}`)
+	} finally {
+		testingLinkedIn.value = false;
+	}
+}
 </script>
 
 <template>
@@ -369,6 +421,54 @@ const handleDisconnectX = async () => {
 						</Modal>
 					</div>
 				</div>
+
+				<div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+					<div class="flex items-center gap-3">
+						<svg class="h-6 w-6 dark:text-white" fill="currentColor" viewBox="0 0 24 24">
+							<path
+								d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+						</svg>
+						<div>
+							<p class="font-medium dark:text-white">LinkedIn</p>
+							<p v-if="authStore.isLinkedInConnected" class="text-sm text-green-500 font-medium">
+								✓ Connected{{ authStore.linkedInUsername ? ` as ${authStore.linkedInUsername}` : '' }}
+							</p>
+							<p v-else class="text-sm text-gray-500 dark:text-gray-400">Used to publish your tech updates
+							</p>
+						</div>
+					</div>
+					<div class="flex gap-2">
+						<Button v-if="authStore.isLinkedInConnected" variant="outline" size="sm"
+							:disabled="testingLinkedIn" @click="handleDisconnectLinkedIn">{{
+								testingLinkedIn ? 'Disconnecting...' : 'Disconnect' }}</Button>
+
+						<Modal v-else v-model="isLinkedInModalOpen" title="Setup LinkedIn Account" size="lg">
+							<template #trigger="{ toggleModal }">
+								<Button variant="outline" size="sm" @click="toggleModal(true)">Setup LinkedIn</Button>
+							</template>
+							<template #default="{ toggleModal }">
+								<div class="space-y-4 pt-2">
+									<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+										To publish to LinkedIn, you need to provide an OAuth 2.0 Access Token. You can
+										generate one from the LinkedIn Developer Portal under your App's Auth -> Token
+										Generator. Make sure it has the `w_member_social` and `r_liteprofile` scopes.
+									</p>
+									<Input v-model="linkedInToken" label="LinkedIn Access Token"
+										placeholder="Enter Access Token" type="password" />
+
+									<div
+										class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
+										<Button variant="outline" @click="toggleModal(false)">Cancel</Button>
+										<Button variant="primary" :disabled="testingLinkedIn || !linkedInToken"
+											@click="handleTestAndSaveLinkedIn(toggleModal)">
+											{{ testingLinkedIn ? 'Testing Connection...' : 'Test & Save' }}
+										</Button>
+									</div>
+								</div>
+							</template>
+						</Modal>
+					</div>
+				</div>
 			</div>
 		</Card>
 
@@ -419,8 +519,6 @@ const handleDisconnectX = async () => {
 				<h3 class="text-lg font-semibold dark:text-white">API & Integration Settings</h3>
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 					<Input v-model="config.geminiApiKey" label="Gemini API Key" placeholder="AI..." type="password" />
-					<Input v-model="config.linkedInToken" label="LinkedIn OAuth Token" placeholder="AQV..."
-						type="password" />
 				</div>
 			</div>
 		</Card>

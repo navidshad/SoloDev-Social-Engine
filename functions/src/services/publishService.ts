@@ -38,22 +38,12 @@ export async function publishDraftInternal(userId: string, draftId: string) {
 	const xAppSecret = userData.xAppSecret;
 	const xAccessToken = userData.xAccessToken;
 	const xAccessSecret = userData.xAccessSecret;
-
-	// 3. Fetch User Settings for LinkedIn (Manual for now)
-	const settingsRef = db.doc(`users/${userId}/settings/config`);
-	const settingsSnap = await settingsRef.get();
-
-	if (!settingsSnap.exists) {
-		throw new Error("User settings not found.");
-	}
-
-	const settings = settingsSnap.data() as any;
-	const linkedInToken = settings.linkedInToken;
+	const linkedInAccessToken = userData.linkedInAccessToken;
 
 	// 4. Publish to Networks
 	const results = await Promise.allSettled([
 		publishToX(draft.xPost, draft.extractedImage, xAppKey, xAppSecret, xAccessToken, xAccessSecret),
-		publishToLinkedIn(draft.linkedinPost, draft.extractedImage, linkedInToken)
+		publishToLinkedIn(draft.linkedinPost, draft.extractedImage, linkedInAccessToken)
 	]);
 
 	const xResult = results[0];
