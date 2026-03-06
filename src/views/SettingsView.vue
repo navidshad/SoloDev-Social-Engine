@@ -112,21 +112,30 @@ const toggleRepoTracking = async (repoName: string) => {
 	const repoRef = doc(db, `users/${authStore.user.uid}/trackedRepos`, sanitizedRepoName);
 
 	try {
+		const functions = getFunctions()
+		const toggleHook = httpsCallable(functions, 'toggleRepoWebhook')
+
 		if (newSet.has(repoName)) {
+			// Disable tracking
+			await toggleHook({ repoName, action: 'disable' })
 			await deleteDoc(repoRef);
 			newSet.delete(repoName);
 		} else {
+			// Enable tracking
+			// WEBHOOK_URL is now handled by the backend environment variable
+			const result = await toggleHook({ repoName, action: 'enable' }) as any
 			await setDoc(repoRef, {
 				repoName,
-				addedAt: new Date()
+				addedAt: new Date(),
+				githubHookId: result.data.hookId
 			});
 			newSet.add(repoName);
 			await checkRepoHistories([repoName]);
 		}
 		trackedRepoIds.value = newSet;
-	} catch (err) {
+	} catch (err: any) {
 		console.error("Error toggling repo tracking:", err)
-		toastError("Failed to update tracking status")
+		toastError(`Failed to update tracking: ${err.message}`)
 	}
 }
 

@@ -6,5 +6,6 @@ import { handleGithubRelease } from "./webhooks/githubRelease";
 import { publishDraft } from "./api/publishDraft";
 import { generateInitialPost } from "./api/generateInitialPost";
 import { refineDraft } from "./api/refineDraft";
+import { toggleRepoWebhook } from "./api/toggleRepoWebhook";
 
-export { handleGithubRelease, publishDraft, generateInitialPost, refineDraft };
+export { handleGithubRelease, publishDraft, generateInitialPost, refineDraft, toggleRepoWebhook };
