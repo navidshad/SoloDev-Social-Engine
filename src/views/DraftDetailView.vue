@@ -91,6 +91,7 @@ const saveDraft = async () => {
 
 const refineAI = async () => {
 	if (!draft.value || !refinementPrompt.value || !authStore.user?.uid) return
+	
 	isRefining.value = true
 	try {
 		const currentText = activeTab.value === 'x' ? draft.value.xPost : draft.value.linkedinPost
@@ -375,14 +376,16 @@ const removeDraft = async () => {
 						</div>
 
 						<!-- Image Preview & Picker -->
-						<div v-if="draft.availableImages && draft.availableImages.length > 0" class="px-4 pb-4 shrink-0">
+						<div v-if="draft.availableImages && draft.availableImages.length > 0"
+							class="px-4 pb-4 shrink-0">
 							<div
 								class="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700">
 								<div
 									class="flex items-center justify-between mb-3 text-xs font-bold text-gray-500 uppercase tracking-tighter">
 									<span>{{ activeTab === 'x' ? 'X' : 'LinkedIn' }} Media Selection</span>
 									<span class="text-primary">
-										{{ (activeTab === 'x' ? draft.xImageIndices : draft.linkedinImageIndices)?.length ||
+										{{ (activeTab === 'x' ? draft.xImageIndices :
+											draft.linkedinImageIndices)?.length ||
 											0 }} / {{ activeTab === 'x' ? 4 : 9 }} Selected
 									</span>
 								</div>
@@ -443,9 +446,9 @@ const removeDraft = async () => {
 									<label class="text-xs font-semibold text-gray-500 uppercase mb-1 block">Custom
 										Revision Prompt</label>
 									<div class="flex gap-2">
-										<Input v-model="refinementPrompt"
+										<Input v-model="refinementPrompt" :disabled="isRefining"
 											placeholder="e.g. 'Add a cliffhanger', 'Translate to German'..."
-											@keyup.enter="refineAI" class="flex-1" />
+											@keydown.enter.prevent="refineAI" class="flex-1" />
 										<Button variant="primary" :disabled="isRefining || !refinementPrompt"
 											@click="refineAI">
 											<template #icon-left>

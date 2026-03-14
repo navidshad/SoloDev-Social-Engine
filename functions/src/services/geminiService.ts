@@ -64,6 +64,10 @@ async function generateXPost(ai: GoogleGenAI, context: any) {
 	const systemContext = `Platform: X (formerly Twitter)
 Constraints: STRICTLY PLAIN TEXT. NO markdown, NO bold, NO italics. Max 280 characters.
 Goal: Create a high-engagement tweet with a strong hook.
+Voice Rules:
+- Use industry shorthand (PRs, Async, DX, Refactored).
+- No "AI-isms" like "delve", "tapestry", or "unleash".
+- Max 1-2 emojis.
 Link: Include the link ${context.repoUrl} in the tweet.
 Hashtags: Include 2-3 relevant tech hashtags.
 Persona & Voice: ${context.personaVoice}`;
@@ -91,6 +95,10 @@ async function generateLinkedInPost(ai: GoogleGenAI, context: any) {
 	const systemContext = `Platform: LinkedIn
 Constraints: STRICTLY PLAIN TEXT. NO markdown, NO bold, NO italics. 
 Length: MAXIMUM 1-2 PARAGRAPHS. Keep it concise.
+Voice Rules:
+- Use industry standard vocabulary.
+- No "AI-isms" like "delve", "tapestry", or "unleash".
+- Max 1-2 emojis.
 Link: Include the link ${context.repoUrl} in the post.
 Hashtags: Include 2-3 relevant tech hashtags.
 Persona & Voice: ${context.personaVoice}`;
