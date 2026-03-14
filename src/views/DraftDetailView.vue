@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Card, Button, Tabs, Icon } from 'pilotui/elements'
 import { TextArea, Input } from 'pilotui/form'
@@ -39,10 +39,10 @@ const proposedText = ref('')
 const isComparing = ref(false)
 const isRegenerating = ref(false)
 
-const tabs = [
-	{ id: 'x', label: 'X (Twitter)' },
-	{ id: 'linkedin', label: 'LinkedIn' }
-]
+const tabs = computed(() => [
+	{ id: 'x', label: 'X (Twitter)', disabled: isRefining.value },
+	{ id: 'linkedin', label: 'LinkedIn', disabled: isRefining.value }
+])
 
 const fetchDraft = async () => {
 	const draftId = route.params.id as string
@@ -279,18 +279,18 @@ const removeDraft = async () => {
 					</div>
 				</div>
 				<div class="flex gap-2">
-					<Button variant="outline" @click="removeDraft">Remove</Button>
-					<Button variant="outline" :disabled="isRegenerating" @click="regenerate">
+					<Button variant="outline" :disabled="isRefining" @click="removeDraft">Remove</Button>
+					<Button variant="outline" :disabled="isRegenerating || isRefining" @click="regenerate">
 						<template #icon-left>
 							<Icon :name="isRegenerating ? 'IconLoader' : 'IconRefresh'" class="w-4 h-4"
 								:class="{ 'animate-spin': isRegenerating }" />
 						</template>
 						{{ isRegenerating ? 'Regenerating...' : 'Regenerate' }}
 					</Button>
-					<Button variant="secondary" :disabled="isSaving" @click="saveDraft">
+					<Button variant="secondary" :disabled="isSaving || isRefining" @click="saveDraft">
 						{{ isSaving ? 'Saving...' : 'Save Draft' }}
 					</Button>
-					<Button variant="primary" :disabled="isPublishing" @click="publish">
+					<Button variant="primary" :disabled="isPublishing || isRefining" @click="publish">
 						<template #icon-left v-if="isPublishing">
 							<Icon name="IconLoader" class="w-4 h-4 animate-spin" />
 						</template>
@@ -325,7 +325,7 @@ const removeDraft = async () => {
 				<div class="lg:col-span-8 flex flex-col h-full space-y-4 overflow-hidden">
 					<Card class="flex-1 flex flex-col overflow-hidden">
 						<div class="p-1 px-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
-							<Tabs v-model="activeTab" :tabs="tabs">
+							<Tabs v-model="activeTab" :tabs="tabs" :disabled="isRefining">
 								<template #icon-x>
 									<Icon name="IconTwitter" class="w-4 h-4 text-[#1DA1F2]" />
 								</template>
@@ -351,6 +351,17 @@ const removeDraft = async () => {
 								</div>
 								<TextArea v-model="proposedText" rows="12" class="flex-1 text-lg border-primary/30"
 									readonly />
+							</div>
+							
+							<!-- AI Refinement Loading Overlay -->
+							<div v-if="isRefining" class="absolute inset-0 z-20 bg-white/60 dark:bg-gray-900/60 backdrop-blur-[2px] flex items-center justify-center">
+								<div class="flex flex-col items-center gap-3 p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700">
+									<Icon name="IconLoader" class="w-10 h-10 animate-spin text-primary" />
+									<div class="flex flex-col items-center">
+										<p class="text-sm font-bold dark:text-white uppercase tracking-widest">AI is thinking...</p>
+										<p class="text-[10px] text-gray-400 mt-1 italic">Refining your content based on prompt</p>
+									</div>
+								</div>
 							</div>
 
 							<div v-show="activeTab === 'x'" class="h-full flex flex-col">
@@ -393,7 +404,7 @@ const removeDraft = async () => {
 								<div class="flex gap-2 overflow-x-auto pb-2">
 									<div v-for="(img, idx) in draft.availableImages" :key="idx"
 										class="relative group flex-none">
-										<button @click="toggleImageSelection(idx)"
+										<button @click="toggleImageSelection(idx)" :disabled="isRefining"
 											class="w-24 h-24 rounded-lg border-2 transition-all overflow-hidden relative block"
 											:class="isImageSelected(idx)
 												? 'border-primary ring-2 ring-primary/20'
@@ -426,17 +437,17 @@ const removeDraft = async () => {
 						<div class="flex flex-col gap-4">
 							<!-- Quick Actions -->
 							<div class="flex flex-wrap gap-2">
-								<Button variant="outline" size="sm" @click="quickRefine('shorten')" class="text-xs">
+								<Button variant="outline" size="sm" @click="quickRefine('shorten')" class="text-xs" :disabled="isRefining">
 									⚡ Shorten to fit
 								</Button>
-								<Button variant="outline" size="sm" @click="quickRefine('emojis')" class="text-xs">
+								<Button variant="outline" size="sm" @click="quickRefine('emojis')" class="text-xs" :disabled="isRefining">
 									✨ Add Emojis
 								</Button>
 								<Button variant="outline" size="sm" @click="quickRefine('professional')"
-									class="text-xs">
+									class="text-xs" :disabled="isRefining">
 									👔 Professional
 								</Button>
-								<Button variant="outline" size="sm" @click="quickRefine('casual')" class="text-xs">
+								<Button variant="outline" size="sm" @click="quickRefine('casual')" class="text-xs" :disabled="isRefining">
 									👋 Casual
 								</Button>
 							</div>
