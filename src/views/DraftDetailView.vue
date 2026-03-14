@@ -22,6 +22,8 @@ interface Draft {
 	linkedinPost: string;
 	extractedImage: string | null;
 	availableImages?: string[];
+	xImageIndices?: number[];
+	linkedinImageIndices?: number[];
 	status: string;
 	includedReleases?: string[];
 }
@@ -73,7 +75,8 @@ const saveDraft = async () => {
 		await updateDoc(docRef, {
 			xPost: draft.value.xPost,
 			linkedinPost: draft.value.linkedinPost,
-			extractedImage: draft.value.extractedImage,
+			xImageIndices: draft.value.xImageIndices || [],
+			linkedinImageIndices: draft.value.linkedinImageIndices || [],
 			updatedAt: new Date()
 		})
 		toastSuccess("Draft saved successfully!")
@@ -177,6 +180,33 @@ const publish = async () => {
 	} finally {
 		isPublishing.value = false
 	}
+}
+
+const toggleImageSelection = (index: number) => {
+	if (!draft.value) return
+	const key = activeTab.value === 'x' ? 'xImageIndices' : 'linkedinImageIndices'
+	if (!draft.value[key]) draft.value[key] = []
+
+	const currentIndices = draft.value[key] as number[]
+	const existingIndex = currentIndices.indexOf(index)
+
+	if (existingIndex > -1) {
+		currentIndices.splice(existingIndex, 1)
+	} else {
+		// Enforce limits: X (4), LinkedIn (9)
+		const limit = activeTab.value === 'x' ? 4 : 9
+		if (currentIndices.length < limit) {
+			currentIndices.push(index)
+		} else {
+			toastError(`You can only select up to ${limit} images for ${activeTab.value === 'x' ? 'X' : 'LinkedIn'}.`)
+		}
+	}
+}
+
+const isImageSelected = (index: number) => {
+	if (!draft.value) return false
+	const key = activeTab.value === 'x' ? 'xImageIndices' : 'linkedinImageIndices'
+	return (draft.value[key] as number[])?.includes(index) || false
 }
 
 const removeDraft = async () => {
@@ -314,51 +344,45 @@ const removeDraft = async () => {
 						</div>
 
 						<!-- Image Preview & Picker -->
-						<div v-if="draft.extractedImage || (draft.availableImages && draft.availableImages.length > 0)"
-							class="px-4 pb-4 shrink-0">
+						<div v-if="draft.availableImages && draft.availableImages.length > 0" class="px-4 pb-4 shrink-0">
 							<div
 								class="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700">
 								<div
 									class="flex items-center justify-between mb-3 text-xs font-bold text-gray-500 uppercase tracking-tighter">
-									<span>Selected Media</span>
-									<span v-if="draft.availableImages && draft.availableImages.length > 1"
-										class="text-primary">{{
-											draft.availableImages.length }} Images Extracted</span>
+									<span>{{ activeTab === 'x' ? 'X' : 'LinkedIn' }} Media Selection</span>
+									<span class="text-primary">
+										{{ (activeTab === 'x' ? draft.xImageIndices : draft.linkedinImageIndices)?.length ||
+											0 }} / {{ activeTab === 'x' ? 4 : 9 }} Selected
+									</span>
 								</div>
 
-								<div class="flex gap-4">
-									<div
-										class="w-24 h-24 rounded-lg bg-gray-200 dark:bg-gray-700 overflow-hidden ring-2 ring-primary/20 flex-none relative">
-										<img v-if="draft.extractedImage" :src="draft.extractedImage"
-											class="w-full h-full object-cover" />
-										<div v-else
-											class="w-full h-full flex items-center justify-center text-gray-400">
-											<Icon name="IconPhotoOff" class="w-8 h-8" />
-										</div>
-										<Button v-if="draft.extractedImage" variant="destructive" size="sm"
-											class="absolute top-1 right-1 h-6 w-6 p-0! rounded-full"
-											@click="draft.extractedImage = null">
-											<Icon name="IconX" class="w-3 h-3" />
-										</Button>
-									</div>
+								<div class="flex gap-2 overflow-x-auto pb-2">
+									<div v-for="(img, idx) in draft.availableImages" :key="idx"
+										class="relative group flex-none">
+										<button @click="toggleImageSelection(idx)"
+											class="w-24 h-24 rounded-lg border-2 transition-all overflow-hidden relative block"
+											:class="isImageSelected(idx)
+												? 'border-primary ring-2 ring-primary/20'
+												: 'border-transparent hover:border-gray-300 dark:hover:border-gray-600'">
+											<img :src="img" class="w-full h-full object-cover" />
 
-									<div v-if="draft.availableImages && draft.availableImages.length > 1"
-										class="flex-1 overflow-x-auto">
-										<p class="text-[10px] text-gray-400 mb-2">Available in Release Notes:</p>
-										<div class="flex gap-2">
-											<button v-for="img in draft.availableImages" :key="img"
-												class="w-16 h-16 rounded border-2 transition-all flex-none overflow-hidden"
-												:class="draft.extractedImage === img ? 'border-primary ring-2 ring-primary/20' : 'border-transparent hover:border-gray-300'"
-												@click="draft.extractedImage = img">
-												<img :src="img" class="w-full h-full object-cover" />
-											</button>
-										</div>
-									</div>
-									<div v-else-if="draft.extractedImage" class="flex-1 flex flex-col justify-center">
-										<p class="text-xs text-gray-400 break-all font-mono">{{ draft.extractedImage }}
-										</p>
+											<!-- Selection Overlay -->
+											<div v-if="isImageSelected(idx)"
+												class="absolute top-1 right-1 bg-primary text-white rounded-full p-0.5 shadow-sm">
+												<Icon name="IconCheck" class="w-3 h-3" />
+											</div>
+
+											<!-- Hover Index Indicator -->
+											<div
+												class="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[10px] text-center opacity-0 group-hover:opacity-100 transition-opacity">
+												Image #{{ idx + 1 }}
+											</div>
+										</button>
 									</div>
 								</div>
+								<p v-if="draft.availableImages.length > 5" class="text-[9px] text-gray-400 mt-2 italic">
+									Tip: You can select multiple images by clicking them.
+								</p>
 							</div>
 						</div>
 					</Card>

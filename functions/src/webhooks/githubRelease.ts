@@ -114,6 +114,8 @@ export const handleGithubRelease = onRequest({ secrets: ["X_API_KEY", "X_API_SEC
 			linkedinPost: generated.linkedinPost,
 			extractedImage: generated.extractedImage,
 			availableImages: generated.availableImages,
+			xImageIndices: generated.availableImages.slice(0, 4).map((_, i) => i),
+			linkedinImageIndices: generated.availableImages.slice(0, 9).map((_, i) => i),
 			isIntro,
 			isBatched,
 			status: 'Draft',

@@ -84,6 +84,8 @@ export const generateInitialPost = onCall({ cors: true }, async (request) => {
 			linkedinPost: generated.linkedinPost,
 			extractedImage: generated.extractedImage,
 			availableImages: generated.availableImages,
+			xImageIndices: generated.availableImages.slice(0, 4).map((_, i) => i),
+			linkedinImageIndices: generated.availableImages.slice(0, 9).map((_, i) => i),
 			isIntro: true,
 			isBatched: true,
 			status: 'Draft',

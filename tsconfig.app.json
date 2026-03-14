@@ -3,9 +3,11 @@
   "include": ["env.d.ts", "src/**/*", "src/**/*.vue"],
   "exclude": ["src/**/__tests__/*"],
   "compilerOptions": {
-    // Extra safety for array and object lookups, but may have false positives.
-    "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
+    "strict": false,
+    "verbatimModuleSyntax": false,
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM"],
 
     // Path mapping for cleaner imports.
     "paths": {

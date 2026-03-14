@@ -1,15 +1,15 @@
 import { TwitterApi } from 'twitter-api-v2';
 
 /**
- * Publishes a tweet to X (Twitter).
+ * Publishes a tweet to X (Twitter) with support for multiple images.
  * @param postText The text content of the tweet.
- * @param imageUrl (Optional) The URL of the image to attach.
+ * @param imageUrls (Optional) An array of image URLs to attach.
  * @param appKey The User's OAuth 1.0a Consumer Key.
  * @param appSecret The User's OAuth 1.0a Consumer Secret.
  * @param accessToken The User's OAuth 1.0a Access Token.
  * @param accessSecret The User's OAuth 1.0a Access Secret.
  */
-export async function publishToX(postText: string, imageUrl: string | null, appKey: string, appSecret: string, accessToken: string, accessSecret: string) {
+export async function publishToX(postText: string, imageUrls: string[] | null, appKey: string, appSecret: string, accessToken: string, accessSecret: string) {
 	console.log("Publishing to X...");
 	if (!appKey || !appSecret || !accessToken || !accessSecret) {
 		throw new Error("Missing X API credentials. Please set them up in Settings.");
@@ -24,35 +24,39 @@ export async function publishToX(postText: string, imageUrl: string | null, appK
 		});
 		const rwClient = client.readWrite;
 
-		let mediaId: string | undefined = undefined;
+		const mediaIds: string[] = [];
 
-		// 2. Upload image to X if available and valid
-		const isValidUrl = imageUrl?.startsWith('http');
-
-		if (imageUrl && isValidUrl) {
-			console.log(`Fetching image from ${imageUrl} for X...`);
-			try {
-				const response = await fetch(imageUrl);
-				if (!response.ok) {
-					throw new Error(`Failed to download image from ${imageUrl}: ${response.statusText}`);
+		// 2. Upload images to X if available. X supports up to 4 images per tweet.
+		if (imageUrls && imageUrls.length > 0) {
+			console.log(`Processing ${imageUrls.length} images for X...`);
+			for (const url of imageUrls.slice(0, 4)) {
+				if (!url.startsWith('http')) {
+					console.warn(`Skipping invalid image URL for X: ${url}`);
+					continue;
 				}
-				const arrayBuffer = await response.arrayBuffer();
-				const buffer = Buffer.from(arrayBuffer);
 
-				// Note: Uploading media requires an OAuth 1.0a user context
-				mediaId = await rwClient.v1.uploadMedia(buffer, { mimeType: response.headers.get('content-type') || 'image/png' });
-				console.log("Uploaded media to X. Media ID:", mediaId);
-			} catch (imageErr) {
-				console.warn("Could not process image for X, continuing without it:", imageErr);
+				try {
+					console.log(`Fetching image from ${url} for X...`);
+					const response = await fetch(url);
+					if (!response.ok) {
+						throw new Error(`Failed to download image from ${url}: ${response.statusText}`);
+					}
+					const arrayBuffer = await response.arrayBuffer();
+					const buffer = Buffer.from(arrayBuffer);
+
+					const mediaId = await rwClient.v1.uploadMedia(buffer, { mimeType: response.headers.get('content-type') || 'image/png' });
+					mediaIds.push(mediaId);
+					console.log("Uploaded media to X. Media ID:", mediaId);
+				} catch (imageErr) {
+					console.warn(`Could not process image ${url} for X, skipping:`, imageErr);
+				}
 			}
-		} else if (imageUrl && !isValidUrl) {
-			console.warn(`Skipping invalid image URL for X: ${imageUrl}`);
 		}
 
 		// Post the tweet
 		const tweetConfig: any = { text: postText };
-		if (mediaId) {
-			tweetConfig.media = { media_ids: [mediaId] };
+		if (mediaIds.length > 0) {
+			tweetConfig.media = { media_ids: mediaIds };
 		}
 
 		const result = await rwClient.v2.tweet(tweetConfig);

@@ -37,18 +37,32 @@ export async function publishDraftInternal(userId: string, draftId: string, opti
 	const linkedInAccessToken = userData.linkedInAccessToken;
 	const linkedInUrn = userData.linkedInUrn;
 
-	// 4. Publish to Networks
+	// 4. Determine images for each platform
+	const availableImages = draft.availableImages || (draft.extractedImage ? [draft.extractedImage] : []);
+
+	const getImagesForPlatform = (indices?: number[], legacyUrl?: string | null) => {
+		if (indices && Array.isArray(indices) && indices.length > 0) {
+			return indices.map(i => availableImages[i]).filter(url => !!url);
+		}
+		// Fallback for legacy drafts
+		return legacyUrl ? [legacyUrl] : [];
+	};
+
+	const xImages = getImagesForPlatform(draft.xImageIndices, draft.extractedImage);
+	const linkedinImages = getImagesForPlatform(draft.linkedinImageIndices, draft.extractedImage);
+
+	// 5. Publish to Networks
 	const promises = [];
 	let xIndex = -1;
 	let liIndex = -1;
 
 	if (options.publishToX) {
-		promises.push(publishToX(draft.xPost, draft.extractedImage, xAppKey, xAppSecret, xAccessToken, xAccessSecret));
+		promises.push(publishToX(draft.xPost, xImages, xAppKey, xAppSecret, xAccessToken, xAccessSecret));
 		xIndex = promises.length - 1;
 	}
 
 	if (options.publishToLinkedIn) {
-		promises.push(publishToLinkedIn(draft.linkedinPost, draft.extractedImage, linkedInAccessToken, linkedInUrn));
+		promises.push(publishToLinkedIn(draft.linkedinPost, linkedinImages, linkedInAccessToken, linkedInUrn));
 		liIndex = promises.length - 1;
 	}
 
