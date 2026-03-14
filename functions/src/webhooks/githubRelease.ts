@@ -102,8 +102,10 @@ export const handleGithubRelease = onRequest({ secrets: ["X_API_KEY", "X_API_SEC
 
 		const personaVoice = settings?.personaVoice || 'Write a general tech post.';
 		const geminiApiKey = settings?.geminiApiKey;
+		const repoUrl = payload.release?.html_url || payload.repository?.html_url || '';
+
 		console.log(`Generating posts for ${repoName} ${version} | isIntro: ${isIntro} | isBatched: ${isBatched}`);
-		const generated = await generateSocialPosts(geminiApiKey, finalReleaseNotes, repoName, version, personaVoice, { isIntro, isBatched });
+		const generated = await generateSocialPosts(geminiApiKey, finalReleaseNotes, repoName, version, personaVoice, { isIntro, isBatched, repoUrl });
 
 		const draftData = {
 			repoName,
@@ -112,6 +114,7 @@ export const handleGithubRelease = onRequest({ secrets: ["X_API_KEY", "X_API_SEC
 			releaseNotes: finalReleaseNotes,
 			xPost: generated.xPost,
 			linkedinPost: generated.linkedinPost,
+			repoUrl,
 			extractedImage: generated.extractedImage,
 			availableImages: generated.availableImages,
 			xImageIndices: generated.availableImages.slice(0, 4).map((_, i) => i),

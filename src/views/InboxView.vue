@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router'
 import { Card, Button, Icon } from 'pilotui/elements'
 import { useAuthStore } from '../stores/auth'
 import { getFirestore, collection, query, getDocs, orderBy } from 'firebase/firestore'
+import { getFunctions, httpsCallable } from 'firebase/functions'
+import { toastSuccess, toastError } from 'pilotui/toast'
 
 const authStore = useAuthStore()
 const db = getFirestore()
@@ -51,6 +53,27 @@ const fetchDrafts = async () => {
 		console.error("Failed to fetch drafts:", error)
 	} finally {
 		isLoading.value = false
+	}
+}
+
+const regeneratingIds = ref<Set<string>>(new Set())
+
+const handleRegenerate = async (e: Event, draftId: string) => {
+	e.stopPropagation()
+	if (!confirm('Regenerate content for this draft?')) return
+
+	regeneratingIds.value.add(draftId)
+	try {
+		const functions = getFunctions()
+		const regenerateDraftFn = httpsCallable(functions, 'regenerateDraft')
+		await regenerateDraftFn({ draftId })
+		toastSuccess("Content regenerated!")
+		await fetchDrafts() 
+	} catch (error: any) {
+		console.error("Regeneration failed:", error)
+		toastError(`Failed: ${error.message}`)
+	} finally {
+		regeneratingIds.value.delete(draftId)
 	}
 }
 
@@ -129,9 +152,17 @@ const formatDate = (timestamp: any) => {
 									{{ draft.status || 'Draft' }}
 								</span>
 							</div>
-							<span class="text-[10px] uppercase font-bold tracking-widest text-gray-400 font-mono">
-								{{ formatDate(draft.createdAt) }}
-							</span>
+							<div class="flex items-center gap-2">
+								<button v-if="draft.status !== 'Published'" @click="handleRegenerate($event, draft.id)"
+									class="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors text-gray-400 hover:text-primary tooltip-trigger"
+									:disabled="regeneratingIds.has(draft.id)" title="Regenerate content">
+									<Icon :name="regeneratingIds.has(draft.id) ? 'IconLoader' : 'IconRefresh'"
+										class="w-4 h-4" :class="{ 'animate-spin': regeneratingIds.has(draft.id) }" />
+								</button>
+								<span class="text-[10px] uppercase font-bold tracking-widest text-gray-400 font-mono">
+									{{ formatDate(draft.createdAt) }}
+								</span>
+							</div>
 						</div>
 
 						<h3

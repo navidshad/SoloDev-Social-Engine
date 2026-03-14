@@ -37,6 +37,7 @@ const refinementPrompt = ref('')
 const activeTab = ref('x')
 const proposedText = ref('')
 const isComparing = ref(false)
+const isRegenerating = ref(false)
 
 const tabs = [
 	{ id: 'x', label: 'X (Twitter)' },
@@ -209,6 +210,29 @@ const isImageSelected = (index: number) => {
 	return (draft.value[key] as number[])?.includes(index) || false
 }
 
+const regenerate = async () => {
+	if (!draft.value || !authStore.user?.uid) return
+	if (!confirm('Are you sure you want to regenerate the content? This will overwrite your current edits.')) return
+
+	isRegenerating.value = true
+	try {
+		const functions = getFunctions()
+		const regenerateDraftFn = httpsCallable(functions, 'regenerateDraft')
+		const result = await regenerateDraftFn({ draftId: draft.value.id }) as any
+
+		if (result.data.success) {
+			draft.value.xPost = result.data.xPost
+			draft.value.linkedinPost = result.data.linkedinPost
+			toastSuccess("Content regenerated successfully!")
+		}
+	} catch (error: any) {
+		console.error("Regeneration failed:", error)
+		toastError(`Regeneration failed: ${error.message}`)
+	} finally {
+		isRegenerating.value = false
+	}
+}
+
 const removeDraft = async () => {
 	if (!draft.value || !authStore.user?.uid) return
 	if (confirm('Are you sure you want to remove this draft? This cannot be undone.')) {
@@ -255,6 +279,13 @@ const removeDraft = async () => {
 				</div>
 				<div class="flex gap-2">
 					<Button variant="outline" @click="removeDraft">Remove</Button>
+					<Button variant="outline" :disabled="isRegenerating" @click="regenerate">
+						<template #icon-left>
+							<Icon :name="isRegenerating ? 'IconLoader' : 'IconRefresh'" class="w-4 h-4"
+								:class="{ 'animate-spin': isRegenerating }" />
+						</template>
+						{{ isRegenerating ? 'Regenerating...' : 'Regenerate' }}
+					</Button>
 					<Button variant="secondary" :disabled="isSaving" @click="saveDraft">
 						{{ isSaving ? 'Saving...' : 'Save Draft' }}
 					</Button>
