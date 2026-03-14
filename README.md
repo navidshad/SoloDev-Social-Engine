@@ -1,5 +1,7 @@
 # SoloDev Social Engine
 
+![SoloDev Social Engine Cover](cover.png)
+
 SoloDev Social Engine is a serverless, AI-powered hub built specifically for solo developers, indie hackers, and open-source project maintainers. It automatically translates technical GitHub releases into authentic, brand-building social media content for X (Twitter) and LinkedIn, eliminating the context-switching tax of content creation.
 
 **🔴 Live Version:** [https://solodev-social-engine.web.app](https://solodev-social-engine.web.app)
