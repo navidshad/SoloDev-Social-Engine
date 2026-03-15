@@ -103,7 +103,7 @@ export const handleGithubRelease = onRequest({ secrets: ["X_API_KEY", "X_API_SEC
 		const personaVoice = settings?.personaVoice || 'Write a general tech post.';
 		const geminiApiKey = settings?.geminiApiKey;
 		const readmeImagePolicy = settings?.readmeImagePolicy || 'never';
-		const repoUrl = payload.release?.html_url || payload.repository?.html_url || '';
+		const repoUrl = payload.repository?.html_url || '';
 
 		let readmeContent = "";
 		if (readmeImagePolicy === 'always' || (readmeImagePolicy === 'first' && isIntro)) {

@@ -91,7 +91,10 @@ const generateInitialPost = async (repoName: string) => {
 	try {
 		const functions = getFunctions()
 		const callFn = httpsCallable(functions, 'generateInitialPost')
-		await callFn({ repoName })
+		await callFn({ 
+			repoName,
+			readmeImagePolicy: config.value.readmeImagePolicy
+		})
 		toastSuccess("Initial draft generated! Check your Inbox.")
 		repoHistoryMap.value[repoName] = true
 	} catch (err: any) {

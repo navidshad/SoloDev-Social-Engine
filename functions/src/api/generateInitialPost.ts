@@ -92,7 +92,8 @@ export const generateInitialPost = onCall({ cors: true }, async (request) => {
 		}
 
 		// Generate the post
-		const generated = await generateSocialPosts(geminiApiKey, finalReleaseNotes, repoName, latestVersion, personaVoice, { isIntro: true, isBatched: true, readmeContent });
+		const repoUrl = `https://github.com/${repoName}`;
+		const generated = await generateSocialPosts(geminiApiKey, finalReleaseNotes, repoName, latestVersion, personaVoice, { isIntro: true, isBatched: true, readmeContent, repoUrl });
 
 		const draftData = {
 			repoName,

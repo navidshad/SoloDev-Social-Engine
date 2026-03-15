@@ -42,24 +42,19 @@ export async function generateSocialPosts(
 			generateLinkedInPost(ai, context)
 		]);
 
-		// Extract all unique markdown image URLs
-		const imageRegex = /!\[.*?\]\((.*?)\)/g;
-		const matches = Array.from(releaseNotes.matchAll(imageRegex));
+		// Extract all unique images
+		const availableImages = [
+			...extractImages(releaseNotes, options.repoUrl),
+			...(options.readmeContent ? extractImages(options.readmeContent, options.repoUrl) : [])
+		];
 		
-		// Also extract from README if provided
-		if (options.readmeContent) {
-			const readmeMatches = Array.from(options.readmeContent.matchAll(imageRegex));
-			matches.push(...readmeMatches);
-		}
-
-		const availableImages = [...new Set(matches.map(m => m[1]))].filter(url => url.startsWith('http'));
 		const extractedImage = availableImages.length > 0 ? availableImages[0] : null;
 
 		return {
 			xPost,
 			linkedinPost,
 			extractedImage,
-			availableImages
+			availableImages: [...new Set(availableImages)]
 		};
 	} catch (error) {
 		console.error("Error generating posts with Gemini", error);
@@ -175,4 +170,28 @@ Instructions:
 		console.error(`Error refining ${platform} post with Gemini`, error);
 		throw error;
 	}
+}
+
+function extractImages(content: string, repoUrl?: string): string[] {
+	const markdownImageRegex = /!\[.*?\]\((.*?)\)/g;
+	const htmlImageRegex = /<img.*?src=["'](.*?)["'].*?>/g;
+	const images: string[] = [];
+
+	const processImagePath = (path: string) => {
+		if (path.startsWith('http')) return path;
+		
+		if (repoUrl && repoUrl.includes('github.com')) {
+			const rawBase = repoUrl.replace('github.com', 'raw.githubusercontent.com') + '/main/';
+			return rawBase + path.replace(/^\.\//, '').replace(/^\//, '');
+		}
+		
+		return path;
+	};
+
+	const matches = [...content.matchAll(markdownImageRegex), ...content.matchAll(htmlImageRegex)];
+	for (const m of matches) {
+		images.push(processImagePath(m[1]));
+	}
+
+	return images.filter(img => img.startsWith('http'));
 }
