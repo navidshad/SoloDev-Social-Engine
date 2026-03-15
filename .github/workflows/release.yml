@@ -25,6 +25,19 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
+      - name: Get Recent Commits
+        id: commits
+        run: |
+          # Get commits since last tag or all commits if no tags exist
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LATEST_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"* %s")
+          else
+            COMMITS=$(git log "$LATEST_TAG..HEAD" --pretty=format:"* %s")
+          fi
+          # Save to a file for better handling of multi-line content
+          echo "$COMMITS" > commits.txt
+
       - name: Bump version and create tag
         id: version-bump
         run: |
@@ -45,21 +58,6 @@ jobs:
       - name: Push changes and tag
         run: |
           git push origin main --follow-tags
-
-      - name: Get Recent Commits
-        id: commits
-        run: |
-          # Get commits since last tag or all commits if no tags exist
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -z "$LATEST_TAG" ]; then
-            COMMITS=$(git log --pretty=format:"* %s")
-          else
-            COMMITS=$(git log "$LATEST_TAG..HEAD" --pretty=format:"* %s")
-          fi
-          # We need to escape newlines for GitHub Actions output if we wanted to pass it as an environment variable, 
-          # but we can also just use the git command directly in the prompt or use a temp file.
-          # Let's save to a file for better handling of multi-line content.
-          echo "$COMMITS" > commits.txt
 
       - name: Generate AI Release Notes
         id: gemini-notes
