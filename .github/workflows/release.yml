@@ -84,13 +84,15 @@ jobs:
           else
             echo "No README found" > project_context.txt
           fi
+          # Ensure .gemini directory exists to avoid CLI errors
+          mkdir -p ~/.gemini
 
       - name: Generate AI Release Notes
         id: gemini-notes
         uses: google-github-actions/run-gemini-cli@v0
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-          gemini_model: gemini-1.5-flash
+          gemini_model: gemini-2.5-flash
           prompt: |
             You are a technical writer specialized in software release notes.
             
@@ -109,8 +111,8 @@ jobs:
             4. Group them logically (e.g., Features, Bug Fixes, Chores).
             5. Keep it concise but informative.
             
-            IMPORTANT: Return only the raw markdown content. Do not wrap the entire response in a markdown code block (e.g., do not use ```markdown ... ```).
-
+            IMPORTANT: Return only the raw markdown content. Do not wrap the entire response in a markdown code block (e.g., do not use ```markdown ... ``` or any other code block markers for the summary itself).
+            
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
