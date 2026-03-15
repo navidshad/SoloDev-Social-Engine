@@ -108,6 +108,7 @@ export const generateInitialPost = onCall({ cors: true }, async (request) => {
 			linkedinImageIndices: generated.availableImages.slice(0, 9).map((_, i) => i),
 			isIntro: true,
 			isBatched: true,
+			repoUrl,
 			status: 'Draft',
 			createdAt: admin.firestore.FieldValue.serverTimestamp(),
 		};

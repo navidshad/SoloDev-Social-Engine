@@ -181,8 +181,13 @@ function extractImages(content: string, repoUrl?: string): string[] {
 		if (path.startsWith('http')) return path;
 		
 		if (repoUrl && repoUrl.includes('github.com')) {
-			const rawBase = repoUrl.replace('github.com', 'raw.githubusercontent.com') + '/main/';
-			return rawBase + path.replace(/^\.\//, '').replace(/^\//, '');
+			// Extract owner/repo from URL to be safe
+			const match = repoUrl.match(/github\.com\/([^/]+\/[^/]+)/);
+			if (match) {
+				const fullRepo = match[1].replace(/\/$/, '');
+				const rawBase = `https://raw.githubusercontent.com/${fullRepo}/main/`;
+				return rawBase + path.replace(/^\.\//, '').replace(/^\//, '');
+			}
 		}
 		
 		return path;

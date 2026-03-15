@@ -27,7 +27,11 @@ export const regenerateDraft = onCall({ cors: true }, async (request) => {
 		}
 
 		const draftData = draftSnap.data();
-		const { repoName, version, releaseNotes, isIntro, isBatched, repoUrl } = draftData || {};
+		let { repoName, version, releaseNotes, isIntro, isBatched, repoUrl } = draftData || {};
+
+		if (!repoUrl && repoName) {
+			repoUrl = `https://github.com/${repoName}`;
+		}
 
 		// Fetch User Settings for Persona and API Key
 		const settingsRef = db.doc(`users/${uid}/settings/config`);
