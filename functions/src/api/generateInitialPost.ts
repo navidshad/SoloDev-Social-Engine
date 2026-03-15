@@ -73,11 +73,27 @@ export const generateInitialPost = onCall({ cors: true }, async (request) => {
 		const latestVersion = sortedReleases[sortedReleases.length - 1].tag_name;
 		const readmeImagePolicy = passedPolicy || settingsData?.readmeImagePolicy || 'never';
 
+		// Fetch repo metadata to get default branch
+		let defaultBranch = 'main';
+		try {
+			const repoResponse = await fetch(`https://api.github.com/repos/${repoName}`, {
+				headers: {
+					Authorization: `Bearer ${githubAccessToken}`,
+					Accept: 'application/vnd.github.v3+json'
+				}
+			});
+			if (repoResponse.ok) {
+				const repoData = await repoResponse.json();
+				defaultBranch = repoData.default_branch || 'main';
+			}
+		} catch (err) {
+			console.error("Error fetching repo metadata:", err);
+		}
+
 		let readmeContent = "";
 		if (readmeImagePolicy === 'first' || readmeImagePolicy === 'always') {
-			console.log(`Fetching README for ${repoName} during initial post (policy: ${readmeImagePolicy})`);
 			try {
-				const readmeResponse = await fetch(`https://api.github.com/repos/${repoName}/readme`, {
+				const readmeResponse = await fetch(`https://api.github.com/repos/${repoName}/readme?ref=${defaultBranch}`, {
 					headers: {
 						Authorization: `Bearer ${githubAccessToken}`,
 						Accept: 'application/vnd.github.v3.raw'
@@ -86,14 +102,14 @@ export const generateInitialPost = onCall({ cors: true }, async (request) => {
 				if (readmeResponse.ok) {
 					readmeContent = await readmeResponse.text();
 				}
-			} catch (readmeError) {
-				console.error(`Error fetching README for ${repoName}:`, readmeError);
+			} catch (err) {
+				console.error("Error fetching README:", err);
 			}
 		}
 
 		// Generate the post
 		const repoUrl = `https://github.com/${repoName}`;
-		const generated = await generateSocialPosts(geminiApiKey, finalReleaseNotes, repoName, latestVersion, personaVoice, { isIntro: true, isBatched: true, readmeContent, repoUrl });
+		const generated = await generateSocialPosts(geminiApiKey, finalReleaseNotes, repoName, latestVersion, personaVoice, { isIntro: true, isBatched: true, readmeContent, repoUrl, defaultBranch });
 
 		const draftData = {
 			repoName,
@@ -109,6 +125,7 @@ export const generateInitialPost = onCall({ cors: true }, async (request) => {
 			isIntro: true,
 			isBatched: true,
 			repoUrl,
+			defaultBranch,
 			status: 'Draft',
 			createdAt: admin.firestore.FieldValue.serverTimestamp(),
 		};

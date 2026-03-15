@@ -11,6 +11,13 @@ function stripMarkdown(text: string): string {
 		.trim();
 }
 
+interface ProcessOptions {
+	isIntro?: boolean;
+	isBatched?: boolean;
+	repoUrl?: string;
+	readmeContent?: string;
+	defaultBranch?: string;
+}
 
 export async function generateSocialPosts(
 	apiKey: string,
@@ -18,7 +25,7 @@ export async function generateSocialPosts(
 	repoName: string,
 	version: string,
 	personaVoice: string,
-	options: { isIntro?: boolean, isBatched?: boolean, repoUrl?: string, readmeContent?: string } = {}
+	options: ProcessOptions = {}
 ) {
 	if (!apiKey) {
 		throw new Error("Gemini API Key is required.");
@@ -44,8 +51,8 @@ export async function generateSocialPosts(
 
 		// Extract all unique images
 		const availableImages = [
-			...extractImages(releaseNotes, options.repoUrl),
-			...(options.readmeContent ? extractImages(options.readmeContent, options.repoUrl) : [])
+			...extractImages(releaseNotes, options.repoUrl, options.defaultBranch),
+			...(options.readmeContent ? extractImages(options.readmeContent, options.repoUrl, options.defaultBranch) : [])
 		];
 		
 		const extractedImage = availableImages.length > 0 ? availableImages[0] : null;
@@ -172,7 +179,7 @@ Instructions:
 	}
 }
 
-function extractImages(content: string, repoUrl?: string): string[] {
+function extractImages(content: string, repoUrl?: string, defaultBranch?: string): string[] {
 	const markdownImageRegex = /!\[.*?\]\((.*?)\)/g;
 	const htmlImageRegex = /<img.*?src=["'](.*?)["'].*?>/g;
 	const images: string[] = [];
@@ -185,7 +192,8 @@ function extractImages(content: string, repoUrl?: string): string[] {
 			const match = repoUrl.match(/github\.com\/([^/]+\/[^/]+)/);
 			if (match) {
 				const fullRepo = match[1].replace(/\/$/, '');
-				const rawBase = `https://raw.githubusercontent.com/${fullRepo}/main/`;
+				const branch = defaultBranch || 'main';
+				const rawBase = `https://raw.githubusercontent.com/${fullRepo}/${branch}/`;
 				return rawBase + path.replace(/^\.\//, '').replace(/^\//, '');
 			}
 		}

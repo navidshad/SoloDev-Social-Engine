@@ -27,11 +27,25 @@ export const regenerateDraft = onCall({ cors: true }, async (request) => {
 		}
 
 		const draftData = draftSnap.data();
-		let { repoName, version, releaseNotes, isIntro, isBatched, repoUrl } = draftData || {};
+		let { repoName, version, releaseNotes, isIntro, isBatched, repoUrl, defaultBranch } = draftData || {};
 
 		if (!repoUrl && repoName) {
 			repoUrl = `https://github.com/${repoName}`;
 		}
+		
+		if (!defaultBranch) {
+			defaultBranch = 'main'; // Fallback
+		}
+
+		// Re-evaluate isIntro: If this is the only remaining draft for this repo, treat it as intro
+		// This allows users to "reset" by deleting other drafts and regenerating.
+		const otherDraftsQuery = await db.collection(`users/${uid}/drafts`)
+			.where('repoName', '==', repoName)
+			.limit(2) // We only need to know if there's AT LEAST one other
+			.get();
+		
+		// If there's only 1 (this one) or 0 (shouldn't happen here), it's an intro
+		isIntro = otherDraftsQuery.size <= 1;
 
 		// Fetch User Settings for Persona and API Key
 		const settingsRef = db.doc(`users/${uid}/settings/config`);
@@ -51,7 +65,7 @@ export const regenerateDraft = onCall({ cors: true }, async (request) => {
 				const userDocSnap = await db.doc(`users/${uid}`).get();
 				const githubAccessToken = userDocSnap.data()?.githubAccessToken;
 				if (githubAccessToken) {
-					const readmeResponse = await fetch(`https://api.github.com/repos/${repoName}/readme`, {
+					const readmeResponse = await fetch(`https://api.github.com/repos/${repoName}/readme?ref=${defaultBranch}`, {
 						headers: {
 							Authorization: `Bearer ${githubAccessToken}`,
 							Accept: 'application/vnd.github.v3.raw'
@@ -73,20 +87,30 @@ export const regenerateDraft = onCall({ cors: true }, async (request) => {
 			repoName,
 			version,
 			personaVoice,
-			{ isIntro, isBatched, repoUrl, readmeContent }
+			{ isIntro, isBatched, repoUrl, readmeContent, defaultBranch }
 		);
 
 		// Update the draft
-		await draftRef.update({
+		const updateData: any = {
 			xPost: generated.xPost,
 			linkedinPost: generated.linkedinPost,
+			extractedImage: generated.extractedImage,
+			availableImages: generated.availableImages,
+			xImageIndices: generated.availableImages.slice(0, 4).map((_, i) => i),
+			linkedinImageIndices: generated.availableImages.slice(0, 9).map((_, i) => i),
+			defaultBranch,
+			isIntro,
 			updatedAt: admin.firestore.FieldValue.serverTimestamp()
-		});
+		};
+
+		await draftRef.update(updateData);
 
 		return {
 			success: true,
 			xPost: generated.xPost,
-			linkedinPost: generated.linkedinPost
+			linkedinPost: generated.linkedinPost,
+			extractedImage: generated.extractedImage,
+			availableImages: generated.availableImages
 		};
 
 	} catch (error: any) {

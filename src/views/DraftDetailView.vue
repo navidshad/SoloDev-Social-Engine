@@ -224,6 +224,15 @@ const regenerate = async () => {
 		if (result.data.success) {
 			draft.value.xPost = result.data.xPost
 			draft.value.linkedinPost = result.data.linkedinPost
+			draft.value.extractedImage = result.data.extractedImage
+			draft.value.availableImages = result.data.availableImages
+			
+			// Reset indices to select first few images by default
+			if (result.data.availableImages) {
+				draft.value.xImageIndices = result.data.availableImages.slice(0, 4).map((_, i) => i)
+				draft.value.linkedinImageIndices = result.data.availableImages.slice(0, 9).map((_, i) => i)
+			}
+			
 			toastSuccess("Content regenerated successfully!")
 		}
 	} catch (error: any) {
