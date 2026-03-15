@@ -75,22 +75,41 @@ jobs:
         run: |
           git push origin main --follow-tags
 
+      - name: Get Project Context
+        id: context
+        run: |
+          # Read README to provide context to Gemini
+          if [ -f README.md ]; then
+            cat README.md > project_context.txt
+          else
+            echo "No README found" > project_context.txt
+          fi
+
       - name: Generate AI Release Notes
         id: gemini-notes
         uses: google-github-actions/run-gemini-cli@v0
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-          gemini_model: gemini-2.5-flash
+          gemini_model: gemini-1.5-flash
           prompt: |
             You are a technical writer specialized in software release notes.
-            Analyze the following commit history and generate a professional, engaging summary of the new features, improvements, and fixes.
-            Group them logically (e.g., Features, Bug Fixes, Chores).
-            Keep it concise but informative.
+            
+            PROJECT CONTEXT:
+            $(cat project_context.txt)
+            
+            RELEASE VERSION: ${{ steps.version-bump.outputs.version }}
+            
+            COMMIT HISTORY:
+            $(cat commits.txt)
+            
+            INSTRUCTIONS:
+            1. Analyze the project context and commit history.
+            2. If the version is v1.0.0, start with an inspiring and celebratory introduction about the SoloDev Social Engine project, its mission, and what this major milestone represents.
+            3. For all versions, generate a professional, engaging summary of the new features, improvements, and fixes.
+            4. Group them logically (e.g., Features, Bug Fixes, Chores).
+            5. Keep it concise but informative.
             
             IMPORTANT: Return only the raw markdown content. Do not wrap the entire response in a markdown code block (e.g., do not use ```markdown ... ```).
-            
-            Commits:
-            $(cat commits.txt)
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
