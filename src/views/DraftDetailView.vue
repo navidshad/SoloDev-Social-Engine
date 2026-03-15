@@ -22,6 +22,8 @@ interface Draft {
 	linkedinPost: string;
 	extractedImage: string | null;
 	availableImages?: string[];
+	xImageIndices?: number[];
+	linkedinImageIndices?: number[];
 	status: string;
 	includedReleases?: string[];
 }
@@ -35,11 +37,12 @@ const refinementPrompt = ref('')
 const activeTab = ref('x')
 const proposedText = ref('')
 const isComparing = ref(false)
+const isRegenerating = ref(false)
 
-const tabs = [
-	{ id: 'x', label: 'X (Twitter)' },
-	{ id: 'linkedin', label: 'LinkedIn' }
-]
+const tabs = computed(() => [
+	{ id: 'x', label: 'X (Twitter)', disabled: isRefining.value },
+	{ id: 'linkedin', label: 'LinkedIn', disabled: isRefining.value }
+])
 
 const fetchDraft = async () => {
 	const draftId = route.params.id as string
@@ -73,7 +76,8 @@ const saveDraft = async () => {
 		await updateDoc(docRef, {
 			xPost: draft.value.xPost,
 			linkedinPost: draft.value.linkedinPost,
-			extractedImage: draft.value.extractedImage,
+			xImageIndices: draft.value.xImageIndices || [],
+			linkedinImageIndices: draft.value.linkedinImageIndices || [],
 			updatedAt: new Date()
 		})
 		toastSuccess("Draft saved successfully!")
@@ -87,6 +91,7 @@ const saveDraft = async () => {
 
 const refineAI = async () => {
 	if (!draft.value || !refinementPrompt.value || !authStore.user?.uid) return
+	
 	isRefining.value = true
 	try {
 		const currentText = activeTab.value === 'x' ? draft.value.xPost : draft.value.linkedinPost
@@ -148,6 +153,12 @@ const applyProposed = () => {
 
 const publish = async () => {
 	if (!draft.value) return
+
+	const targetPlatform = activeTab.value === 'x' ? 'X (Twitter)' : 'LinkedIn'
+	const action = (draft.value.status === 'Published' || draft.value.status === 'Partially Published') ? 'Republish' : 'Publish'
+
+	if (!confirm(`Are you sure you want to ${action.toLowerCase()} this post to ${targetPlatform}?`)) return
+
 	isPublishing.value = true
 	try {
 		// Save first to ensure latest edits are published
@@ -155,7 +166,11 @@ const publish = async () => {
 
 		const functions = getFunctions()
 		const publishDraftFn = httpsCallable(functions, 'publishDraft')
-		const result = await publishDraftFn({ draftId: draft.value.id }) as any
+		const result = await publishDraftFn({
+			draftId: draft.value.id,
+			publishToX: activeTab.value === 'x',
+			publishToLinkedIn: activeTab.value === 'linkedin'
+		}) as any
 
 		if (result.data.success) {
 			toastSuccess('Published successfully!')
@@ -169,15 +184,65 @@ const publish = async () => {
 	}
 }
 
-const discard = async () => {
+const toggleImageSelection = (index: number) => {
+	if (!draft.value) return
+	const key = activeTab.value === 'x' ? 'xImageIndices' : 'linkedinImageIndices'
+	if (!draft.value[key]) draft.value[key] = []
+
+	const currentIndices = draft.value[key] as number[]
+	const existingIndex = currentIndices.indexOf(index)
+
+	if (existingIndex > -1) {
+		currentIndices.splice(existingIndex, 1)
+	} else {
+		// Enforce limits: X (4), LinkedIn (9)
+		const limit = activeTab.value === 'x' ? 4 : 9
+		if (currentIndices.length < limit) {
+			currentIndices.push(index)
+		} else {
+			toastError(`You can only select up to ${limit} images for ${activeTab.value === 'x' ? 'X' : 'LinkedIn'}.`)
+		}
+	}
+}
+
+const isImageSelected = (index: number) => {
+	if (!draft.value) return false
+	const key = activeTab.value === 'x' ? 'xImageIndices' : 'linkedinImageIndices'
+	return (draft.value[key] as number[])?.includes(index) || false
+}
+
+const regenerate = async () => {
 	if (!draft.value || !authStore.user?.uid) return
-	if (confirm('Are you sure you want to discard this draft?')) {
+	if (!confirm('Are you sure you want to regenerate the content? This will overwrite your current edits.')) return
+
+	isRegenerating.value = true
+	try {
+		const functions = getFunctions()
+		const regenerateDraftFn = httpsCallable(functions, 'regenerateDraft')
+		const result = await regenerateDraftFn({ draftId: draft.value.id }) as any
+
+		if (result.data.success) {
+			draft.value.xPost = result.data.xPost
+			draft.value.linkedinPost = result.data.linkedinPost
+			toastSuccess("Content regenerated successfully!")
+		}
+	} catch (error: any) {
+		console.error("Regeneration failed:", error)
+		toastError(`Regeneration failed: ${error.message}`)
+	} finally {
+		isRegenerating.value = false
+	}
+}
+
+const removeDraft = async () => {
+	if (!draft.value || !authStore.user?.uid) return
+	if (confirm('Are you sure you want to remove this draft? This cannot be undone.')) {
 		try {
 			const docRef = doc(db, `users/${authStore.user.uid}/drafts`, draft.value.id)
-			await updateDoc(docRef, { status: 'Discarded' })
+			await deleteDoc(docRef)
 			router.push('/inbox')
 		} catch (error) {
-			console.error("Error discarding draft:", error)
+			console.error("Error removing draft:", error)
 		}
 	}
 }
@@ -214,12 +279,26 @@ const discard = async () => {
 					</div>
 				</div>
 				<div class="flex gap-2">
-					<Button variant="outline" @click="discard">Discard</Button>
-					<Button variant="secondary" :disabled="isSaving" @click="saveDraft">
+					<Button variant="outline" :disabled="isRefining" @click="removeDraft">Remove</Button>
+					<Button variant="outline" :disabled="isRegenerating || isRefining" @click="regenerate">
+						<template #icon-left>
+							<Icon :name="isRegenerating ? 'IconLoader' : 'IconRefresh'" class="w-4 h-4"
+								:class="{ 'animate-spin': isRegenerating }" />
+						</template>
+						{{ isRegenerating ? 'Regenerating...' : 'Regenerate' }}
+					</Button>
+					<Button variant="secondary" :disabled="isSaving || isRefining" @click="saveDraft">
 						{{ isSaving ? 'Saving...' : 'Save Draft' }}
 					</Button>
-					<Button variant="primary" :disabled="isPublishing" @click="publish">
-						{{ isPublishing ? 'Publishing...' : 'Approve & Publish' }}
+					<Button variant="primary" :disabled="isPublishing || isRefining" @click="publish">
+						<template #icon-left v-if="isPublishing">
+							<Icon name="IconLoader" class="w-4 h-4 animate-spin" />
+						</template>
+						<template v-if="isPublishing">Publishing...</template>
+						<template v-else>
+							{{ (draft.status === 'Published' || draft.status === 'Partially Published') ? 'Republish to'
+								: 'Publish to' }} {{ activeTab === 'x' ? 'X' : 'LinkedIn' }}
+						</template>
 					</Button>
 				</div>
 			</div>
@@ -246,7 +325,7 @@ const discard = async () => {
 				<div class="lg:col-span-8 flex flex-col h-full space-y-4 overflow-hidden">
 					<Card class="flex-1 flex flex-col overflow-hidden">
 						<div class="p-1 px-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
-							<Tabs v-model="activeTab" :tabs="tabs">
+							<Tabs v-model="activeTab" :tabs="tabs" :disabled="isRefining">
 								<template #icon-x>
 									<Icon name="IconTwitter" class="w-4 h-4 text-[#1DA1F2]" />
 								</template>
@@ -273,6 +352,17 @@ const discard = async () => {
 								<TextArea v-model="proposedText" rows="12" class="flex-1 text-lg border-primary/30"
 									readonly />
 							</div>
+							
+							<!-- AI Refinement Loading Overlay -->
+							<div v-if="isRefining" class="absolute inset-0 z-20 bg-white/60 dark:bg-gray-900/60 backdrop-blur-[2px] flex items-center justify-center">
+								<div class="flex flex-col items-center gap-3 p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700">
+									<Icon name="IconLoader" class="w-10 h-10 animate-spin text-primary" />
+									<div class="flex flex-col items-center">
+										<p class="text-sm font-bold dark:text-white uppercase tracking-widest">AI is thinking...</p>
+										<p class="text-[10px] text-gray-400 mt-1 italic">Refining your content based on prompt</p>
+									</div>
+								</div>
+							</div>
 
 							<div v-show="activeTab === 'x'" class="h-full flex flex-col">
 								<TextArea v-model="draft.xPost" rows="10" placeholder="What's happening?"
@@ -297,51 +387,47 @@ const discard = async () => {
 						</div>
 
 						<!-- Image Preview & Picker -->
-						<div v-if="draft.extractedImage || (draft.availableImages && draft.availableImages.length > 0)"
+						<div v-if="draft.availableImages && draft.availableImages.length > 0"
 							class="px-4 pb-4 shrink-0">
 							<div
 								class="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700">
 								<div
 									class="flex items-center justify-between mb-3 text-xs font-bold text-gray-500 uppercase tracking-tighter">
-									<span>Selected Media</span>
-									<span v-if="draft.availableImages && draft.availableImages.length > 1"
-										class="text-primary">{{
-											draft.availableImages.length }} Images Extracted</span>
+									<span>{{ activeTab === 'x' ? 'X' : 'LinkedIn' }} Media Selection</span>
+									<span class="text-primary">
+										{{ (activeTab === 'x' ? draft.xImageIndices :
+											draft.linkedinImageIndices)?.length ||
+											0 }} / {{ activeTab === 'x' ? 4 : 9 }} Selected
+									</span>
 								</div>
 
-								<div class="flex gap-4">
-									<div
-										class="w-24 h-24 rounded-lg bg-gray-200 dark:bg-gray-700 overflow-hidden ring-2 ring-primary/20 flex-none relative">
-										<img v-if="draft.extractedImage" :src="draft.extractedImage"
-											class="w-full h-full object-cover" />
-										<div v-else
-											class="w-full h-full flex items-center justify-center text-gray-400">
-											<Icon name="IconPhotoOff" class="w-8 h-8" />
-										</div>
-										<Button v-if="draft.extractedImage" variant="destructive" size="sm"
-											class="absolute top-1 right-1 h-6 w-6 p-0! rounded-full"
-											@click="draft.extractedImage = null">
-											<Icon name="IconX" class="w-3 h-3" />
-										</Button>
-									</div>
+								<div class="flex gap-2 overflow-x-auto pb-2">
+									<div v-for="(img, idx) in draft.availableImages" :key="idx"
+										class="relative group flex-none">
+										<button @click="toggleImageSelection(idx)" :disabled="isRefining"
+											class="w-24 h-24 rounded-lg border-2 transition-all overflow-hidden relative block"
+											:class="isImageSelected(idx)
+												? 'border-primary ring-2 ring-primary/20'
+												: 'border-transparent hover:border-gray-300 dark:hover:border-gray-600'">
+											<img :src="img" class="w-full h-full object-cover" />
 
-									<div v-if="draft.availableImages && draft.availableImages.length > 1"
-										class="flex-1 overflow-x-auto">
-										<p class="text-[10px] text-gray-400 mb-2">Available in Release Notes:</p>
-										<div class="flex gap-2">
-											<button v-for="img in draft.availableImages" :key="img"
-												class="w-16 h-16 rounded border-2 transition-all flex-none overflow-hidden"
-												:class="draft.extractedImage === img ? 'border-primary ring-2 ring-primary/20' : 'border-transparent hover:border-gray-300'"
-												@click="draft.extractedImage = img">
-												<img :src="img" class="w-full h-full object-cover" />
-											</button>
-										</div>
-									</div>
-									<div v-else-if="draft.extractedImage" class="flex-1 flex flex-col justify-center">
-										<p class="text-xs text-gray-400 break-all font-mono">{{ draft.extractedImage }}
-										</p>
+											<!-- Selection Overlay -->
+											<div v-if="isImageSelected(idx)"
+												class="absolute top-1 right-1 bg-primary text-white rounded-full p-0.5 shadow-sm">
+												<Icon name="IconCheck" class="w-3 h-3" />
+											</div>
+
+											<!-- Hover Index Indicator -->
+											<div
+												class="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[10px] text-center opacity-0 group-hover:opacity-100 transition-opacity">
+												Image #{{ idx + 1 }}
+											</div>
+										</button>
 									</div>
 								</div>
+								<p v-if="draft.availableImages.length > 5" class="text-[9px] text-gray-400 mt-2 italic">
+									Tip: You can select multiple images by clicking them.
+								</p>
 							</div>
 						</div>
 					</Card>
@@ -351,17 +437,17 @@ const discard = async () => {
 						<div class="flex flex-col gap-4">
 							<!-- Quick Actions -->
 							<div class="flex flex-wrap gap-2">
-								<Button variant="outline" size="sm" @click="quickRefine('shorten')" class="text-xs">
+								<Button variant="outline" size="sm" @click="quickRefine('shorten')" class="text-xs" :disabled="isRefining">
 									⚡ Shorten to fit
 								</Button>
-								<Button variant="outline" size="sm" @click="quickRefine('emojis')" class="text-xs">
+								<Button variant="outline" size="sm" @click="quickRefine('emojis')" class="text-xs" :disabled="isRefining">
 									✨ Add Emojis
 								</Button>
 								<Button variant="outline" size="sm" @click="quickRefine('professional')"
-									class="text-xs">
+									class="text-xs" :disabled="isRefining">
 									👔 Professional
 								</Button>
-								<Button variant="outline" size="sm" @click="quickRefine('casual')" class="text-xs">
+								<Button variant="outline" size="sm" @click="quickRefine('casual')" class="text-xs" :disabled="isRefining">
 									👋 Casual
 								</Button>
 							</div>
@@ -371,9 +457,9 @@ const discard = async () => {
 									<label class="text-xs font-semibold text-gray-500 uppercase mb-1 block">Custom
 										Revision Prompt</label>
 									<div class="flex gap-2">
-										<Input v-model="refinementPrompt"
+										<Input v-model="refinementPrompt" :disabled="isRefining"
 											placeholder="e.g. 'Add a cliffhanger', 'Translate to German'..."
-											@keyup.enter="refineAI" class="flex-1" />
+											@keydown.enter.prevent="refineAI" class="flex-1" />
 										<Button variant="primary" :disabled="isRefining || !refinementPrompt"
 											@click="refineAI">
 											<template #icon-left>

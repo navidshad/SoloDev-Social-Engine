@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { getAuth, signInWithPopup, GoogleAuthProvider, GithubAuthProvider, linkWithPopup, unlink, signOut, onAuthStateChanged, AuthErrorCodes, type User } from 'firebase/auth'
+import { getAuth, signInWithPopup, GoogleAuthProvider, GithubAuthProvider, TwitterAuthProvider, linkWithPopup, unlink, signOut, onAuthStateChanged, AuthErrorCodes, type User } from 'firebase/auth'
 import { app } from '../firebase/config'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -15,17 +15,44 @@ export const useAuthStore = defineStore('auth', () => {
 	const githubUsername = ref<string | null>(null)
 	const githubLoading = ref(false)
 
+	const isXConnected = ref(false)
+	const xUsername = ref<string | null>(null)
+	const xLoading = ref(false)
+
+	const isLinkedInConnected = ref(false)
+	const linkedInUsername = ref<string | null>(null)
+
 	// Helper to sync GitHub state from the current Firebase user's providerData
-	function syncGithubState(currentUser: User | null) {
+	function syncAuthState(currentUser: User | null) {
 		const githubProvider = currentUser?.providerData.find(p => p.providerId === 'github.com')
 		isGithubConnected.value = !!githubProvider
 		githubUsername.value = githubProvider?.displayName ?? null
+
+		if (currentUser) {
+			import('firebase/firestore').then(({ getFirestore, doc, getDoc }) => {
+				const db = getFirestore()
+				getDoc(doc(db, 'users', currentUser.uid)).then(docSnap => {
+					if (docSnap.exists()) {
+						const data = docSnap.data()
+						isXConnected.value = !!data.xAccessToken
+						xUsername.value = data.xUsername ?? null
+						isLinkedInConnected.value = !!data.linkedInAccessToken
+						linkedInUsername.value = data.linkedInUsername ?? null
+					}
+				})
+			})
+		} else {
+			isXConnected.value = false
+			xUsername.value = null
+			isLinkedInConnected.value = false
+			linkedInUsername.value = null
+		}
 	}
 
 	// Initialize auth state listener
 	onAuthStateChanged(auth, (currentUser) => {
 		user.value = currentUser
-		syncGithubState(currentUser)
+		syncAuthState(currentUser)
 		loading.value = false
 	})
 
@@ -126,6 +153,16 @@ export const useAuthStore = defineStore('auth', () => {
 		}
 	}
 
+	async function setXConnected(connected: boolean, username: string | null = null) {
+		isXConnected.value = connected
+		xUsername.value = username
+	}
+
+	async function setLinkedInConnected(connected: boolean, username: string | null = null) {
+		isLinkedInConnected.value = connected
+		linkedInUsername.value = username
+	}
+
 	async function logout() {
 		try {
 			await signOut(auth)
@@ -140,9 +177,16 @@ export const useAuthStore = defineStore('auth', () => {
 		isGithubConnected,
 		githubUsername,
 		githubLoading,
+		isXConnected,
+		xUsername,
+		xLoading,
+		isLinkedInConnected,
+		linkedInUsername,
 		loginWithGoogle,
 		connectGithub,
 		disconnectGithub,
+		setXConnected,
+		setLinkedInConnected,
 		logout
 	}
 })

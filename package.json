@@ -18,8 +18,9 @@
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
     "format": "oxfmt src/",
-    "deploy": "npm run build && firebase deploy",
-    "deploy:hosting": "npm run build && firebase deploy --only hosting"
+    "deploy": "npm run build && npx firebase-tools deploy",
+    "deploy:hosting": "npm run build && npx firebase-tools deploy --only hosting",
+    "deploy:functions": "npx firebase-tools deploy --only functions"
   },
   "repository": {
     "type": "git",

@@ -1,38 +1,62 @@
 import { TwitterApi } from 'twitter-api-v2';
 
 /**
- * Publishes a tweet to X (Twitter).
+ * Publishes a tweet to X (Twitter) with support for multiple images.
  * @param postText The text content of the tweet.
- * @param imageUrl (Optional) The URL of the image to attach.
- * @param apiKey The API Key or Bearer Token for X. Currently assuming this is a Bearer Token or App-level token.
- * Note: For posting tweets on behalf of a user, X requires an OAuth 1.0a User Context or OAuth 2.0 User Context token.
- * We assume `apiKey` is a valid token that can instantiate a client with tweet capabilities.
+ * @param imageUrls (Optional) An array of image URLs to attach.
+ * @param appKey The User's OAuth 1.0a Consumer Key.
+ * @param appSecret The User's OAuth 1.0a Consumer Secret.
+ * @param accessToken The User's OAuth 1.0a Access Token.
+ * @param accessSecret The User's OAuth 1.0a Access Secret.
  */
-export async function publishToX(postText: string, imageUrl: string | null, apiKey: string) {
+export async function publishToX(postText: string, imageUrls: string[] | null, appKey: string, appSecret: string, accessToken: string, accessSecret: string) {
 	console.log("Publishing to X...");
+	if (!appKey || !appSecret || !accessToken || !accessSecret) {
+		throw new Error("Missing X API credentials. Please set them up in Settings.");
+	}
 	try {
-		// Initializing with bearer token (or you can adjust to use OAuth 1.0a keys if the apiKey string is a JSON payload)
-		const client = new TwitterApi(apiKey);
+		// Initializing with OAuth 1.0a user context
+		const client = new TwitterApi({
+			appKey: appKey,
+			appSecret: appSecret,
+			accessToken: accessToken,
+			accessSecret: accessSecret,
+		});
 		const rwClient = client.readWrite;
 
-		let mediaId: string | undefined = undefined;
+		const mediaIds: string[] = [];
 
-		// If an image URL is provided, we fetch it and upload to X first
-		if (imageUrl) {
-			console.log(`Fetching image from ${imageUrl} for X...`);
-			const response = await fetch(imageUrl);
-			const arrayBuffer = await response.arrayBuffer();
-			const buffer = Buffer.from(arrayBuffer);
+		// 2. Upload images to X if available. X supports up to 4 images per tweet.
+		if (imageUrls && imageUrls.length > 0) {
+			console.log(`Processing ${imageUrls.length} images for X...`);
+			for (const url of imageUrls.slice(0, 4)) {
+				if (!url.startsWith('http')) {
+					console.warn(`Skipping invalid image URL for X: ${url}`);
+					continue;
+				}
 
-			// Note: Uploading media requires an OAuth 1.0a user context in most cases.
-			mediaId = await rwClient.v1.uploadMedia(buffer, { mimeType: response.headers.get('content-type') || 'image/png' });
-			console.log("Uploaded media to X. Media ID:", mediaId);
+				try {
+					console.log(`Fetching image from ${url} for X...`);
+					const response = await fetch(url);
+					if (!response.ok) {
+						throw new Error(`Failed to download image from ${url}: ${response.statusText}`);
+					}
+					const arrayBuffer = await response.arrayBuffer();
+					const buffer = Buffer.from(arrayBuffer);
+
+					const mediaId = await rwClient.v1.uploadMedia(buffer, { mimeType: response.headers.get('content-type') || 'image/png' });
+					mediaIds.push(mediaId);
+					console.log("Uploaded media to X. Media ID:", mediaId);
+				} catch (imageErr) {
+					console.warn(`Could not process image ${url} for X, skipping:`, imageErr);
+				}
+			}
 		}
 
 		// Post the tweet
 		const tweetConfig: any = { text: postText };
-		if (mediaId) {
-			tweetConfig.media = { media_ids: [mediaId] };
+		if (mediaIds.length > 0) {
+			tweetConfig.media = { media_ids: mediaIds };
 		}
 
 		const result = await rwClient.v2.tweet(tweetConfig);

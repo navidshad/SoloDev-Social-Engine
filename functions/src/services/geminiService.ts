@@ -18,7 +18,7 @@ export async function generateSocialPosts(
 	repoName: string,
 	version: string,
 	personaVoice: string,
-	options: { isIntro?: boolean, isBatched?: boolean } = {}
+	options: { isIntro?: boolean, isBatched?: boolean, repoUrl?: string } = {}
 ) {
 	if (!apiKey) {
 		throw new Error("Gemini API Key is required.");
@@ -26,63 +26,31 @@ export async function generateSocialPosts(
 
 	const ai = new GoogleGenAI({ apiKey });
 
-	const systemContext = `Version: ${version}
-
-CRITICAL: Output STRICTLY PLAIN TEXT. NO markdown, NO labels like "LinkedIn Post:" or "X Post:", NO bold, NO italics, NO links. Output ONLY the post body.
-`;
-
-	let xPromptContext = '';
-	let linkedinPromptContext = '';
-
-	if (options.isIntro) {
-		const introContext = `This is the first time you are publicly announcing this repository. The user has just added it to their tracked projects. Use the Release Notes below as a hint to what the project does, but focus the posts on introducing the project itself: 'I'm building X, here is what it does'.\nRelease Notes to extract context from:\n${releaseNotes}`;
-
-		xPromptContext = `${systemContext}\n${introContext}\n\nWrite a tweet to introduce this new project to the world. 
-Write a "hook" first sentence, keep it under 280 characters, and focus on the core value proposition. Do not use hashtags if the voice rules forbid it.`;
-
-		linkedinPromptContext = `${systemContext}\n${introContext}\n\nWrite a LinkedIn post to introduce this new project.
-Write a storytelling post (up to 3,000 characters). Explain why you started this project, the problem it solves, and invite the community to follow your journey. Format with clear paragraphs and bullet points if necessary.`;
-
-	} else if (options.isBatched) {
-		const batchContext = `These release notes contain multiple batched updates that were pending. Please synthesize them into a single, cohesive announcement of all the recent progress.\nBatched Release Notes:\n${releaseNotes}`;
-
-		xPromptContext = `${systemContext}\n${batchContext}\n\nWrite a tweet to announce these batched updates. 
-Write a "hook" first sentence summarizing the biggest change, keep it under 280 characters, and highlight the momentum. Do not use hashtags if the voice rules forbid it.`;
-
-		linkedinPromptContext = `${systemContext}\n${batchContext}\n\nWrite a LinkedIn post to announce these batched updates.
-Write a comprehensive post (up to 3,000 characters). Expand on the overall progress made across these updates, the technical learnings, and invite community discussion. Format with clear paragraphs and bullet points if necessary.`;
-
-	} else {
-		const regularContext = `Release Notes:\n${releaseNotes}`;
-
-		xPromptContext = `${systemContext}\n${regularContext}\n\nWrite a tweet to announce this release. 
-Write a "hook" first sentence, keep it under 280 characters, and focus on the immediate value or the "indie hacker" milestone. Do not use hashtags if the voice rules forbid it.`;
-
-		linkedinPromptContext = `${systemContext}\n${regularContext}\n\nWrite a LinkedIn post to announce this release.
-Write a storytelling post (up to 3,000 characters). Expand on the problem this release solves, the technical learnings, and invite community discussion. Format with clear paragraphs and bullet points if necessary.`;
-	}
+	const context = {
+		version,
+		repoName,
+		repoUrl: options.repoUrl || '',
+		releaseNotes,
+		isIntro: !!options.isIntro,
+		isBatched: !!options.isBatched,
+		personaVoice
+	};
 
 	try {
-		const [xAppResponse, linkedinAppResponse] = await Promise.all([
-			ai.models.generateContent({
-				model: 'gemini-2.5-flash',
-				contents: xPromptContext,
-			}),
-			ai.models.generateContent({
-				model: 'gemini-2.5-flash',
-				contents: linkedinPromptContext,
-			})
+		const [xPost, linkedinPost] = await Promise.all([
+			generateXPost(ai, context),
+			generateLinkedInPost(ai, context)
 		]);
 
 		// Extract all unique markdown image URLs
 		const imageRegex = /!\[.*?\]\((.*?)\)/g;
 		const matches = Array.from(releaseNotes.matchAll(imageRegex));
-		const availableImages = [...new Set(matches.map(m => m[1]))];
+		const availableImages = [...new Set(matches.map(m => m[1]))].filter(url => url.startsWith('http'));
 		const extractedImage = availableImages.length > 0 ? availableImages[0] : null;
 
 		return {
-			xPost: stripMarkdown((xAppResponse as any).text || ""),
-			linkedinPost: stripMarkdown((linkedinAppResponse as any).text || ""),
+			xPost,
+			linkedinPost,
 			extractedImage,
 			availableImages
 		};
@@ -90,6 +58,68 @@ Write a storytelling post (up to 3,000 characters). Expand on the problem this r
 		console.error("Error generating posts with Gemini", error);
 		throw error;
 	}
+}
+
+async function generateXPost(ai: GoogleGenAI, context: any) {
+	const systemContext = `Platform: X (formerly Twitter)
+Constraints: STRICTLY PLAIN TEXT. NO markdown, NO bold, NO italics. Max 280 characters.
+Goal: Create a high-engagement tweet with a strong hook.
+Voice Rules:
+- Use industry shorthand (PRs, Async, DX, Refactored).
+- No "AI-isms" like "delve", "tapestry", or "unleash".
+- Max 1-2 emojis.
+Link: Include the link ${context.repoUrl} in the tweet.
+Hashtags: Include 2-3 relevant tech hashtags.
+Persona & Voice: ${context.personaVoice}`;
+
+	let prompt = '';
+	if (context.isIntro) {
+		prompt = `Introduce this new project: ${context.repoName}. Use the release notes for context: ${context.releaseNotes}`;
+	} else if (context.isBatched) {
+		prompt = `Announces these batched updates for ${context.repoName}: ${context.releaseNotes}`;
+	} else {
+		prompt = `Announce the new release ${context.version} for ${context.repoName}: ${context.releaseNotes}`;
+	}
+
+	const fullPrompt = `${systemContext}\n\n${prompt}\n\nOutput ONLY the post body.`;
+
+	const response = await ai.models.generateContent({
+		model: 'gemini-2.5-flash',
+		contents: fullPrompt,
+	});
+
+	return stripMarkdown((response as any).text || "");
+}
+
+async function generateLinkedInPost(ai: GoogleGenAI, context: any) {
+	const systemContext = `Platform: LinkedIn
+Constraints: STRICTLY PLAIN TEXT. NO markdown, NO bold, NO italics. 
+Length: MAXIMUM 1-2 PARAGRAPHS. Keep it concise.
+Voice Rules:
+- Use industry standard vocabulary.
+- No "AI-isms" like "delve", "tapestry", or "unleash".
+- Max 1-2 emojis.
+Link: Include the link ${context.repoUrl} in the post.
+Hashtags: Include 2-3 relevant tech hashtags.
+Persona & Voice: ${context.personaVoice}`;
+
+	let prompt = '';
+	if (context.isIntro) {
+		prompt = `Introduce this new project: ${context.repoName} with a storytelling approach. Use the release notes for context: ${context.releaseNotes}`;
+	} else if (context.isBatched) {
+		prompt = `Announces these batched updates for ${context.repoName} summarizing the progress: ${context.releaseNotes}`;
+	} else {
+		prompt = `Announce the new release ${context.version} for ${context.repoName} explaining the value: ${context.releaseNotes}`;
+	}
+
+	const fullPrompt = `${systemContext}\n\n${prompt}\n\nOutput ONLY the post body.`;
+
+	const response = await ai.models.generateContent({
+		model: 'gemini-2.5-flash',
+		contents: fullPrompt,
+	});
+
+	return stripMarkdown((response as any).text || "");
 }
 export async function refineSocialPost(
 	apiKey: string,

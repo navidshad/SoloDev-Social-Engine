@@ -1,8 +1,9 @@
 import { onRequest } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { generateSocialPosts } from "../services/geminiService";
+import { publishDraftInternal } from "../services/publishService";
 
-export const handleGithubRelease = onRequest(async (req, res) => {
+export const handleGithubRelease = onRequest({ secrets: ["X_API_KEY", "X_API_SECRET"] }, async (req, res) => {
 	if (req.method !== 'POST') {
 		res.status(405).send('Method Not Allowed');
 		return;
@@ -44,10 +45,11 @@ export const handleGithubRelease = onRequest(async (req, res) => {
 
 		const settingsSnap = await db.collection(`users/${userId}/settings`).doc('config').get();
 		const settingsData = settingsSnap.data();
-		const personaVoice = settingsSnap.exists ? settingsData?.personaVoice : 'Write a general tech post.';
-		const geminiApiKey = settingsData?.geminiApiKey;
+		const settings = settingsSnap.exists ? settingsData : {};
+		const autoPostEnabled = settings?.autoPostEnabled === true;
+		console.log(`Settings for user ${userId}: autoPostEnabled=${autoPostEnabled}, geminiApiKey=${!!settings?.geminiApiKey}`);
 
-		if (!geminiApiKey) {
+		if (!settings?.geminiApiKey) {
 			console.log(`Gemini API Key missing for user ${userId}. skipping post generation.`);
 			res.status(200).send('Gemini API Key not configured, skipping generation.');
 			return;
@@ -98,8 +100,12 @@ export const handleGithubRelease = onRequest(async (req, res) => {
 			}
 		}
 
+		const personaVoice = settings?.personaVoice || 'Write a general tech post.';
+		const geminiApiKey = settings?.geminiApiKey;
+		const repoUrl = payload.release?.html_url || payload.repository?.html_url || '';
+
 		console.log(`Generating posts for ${repoName} ${version} | isIntro: ${isIntro} | isBatched: ${isBatched}`);
-		const generated = await generateSocialPosts(geminiApiKey, finalReleaseNotes, repoName, version, personaVoice, { isIntro, isBatched });
+		const generated = await generateSocialPosts(geminiApiKey, finalReleaseNotes, repoName, version, personaVoice, { isIntro, isBatched, repoUrl });
 
 		const draftData = {
 			repoName,
@@ -108,8 +114,11 @@ export const handleGithubRelease = onRequest(async (req, res) => {
 			releaseNotes: finalReleaseNotes,
 			xPost: generated.xPost,
 			linkedinPost: generated.linkedinPost,
+			repoUrl,
 			extractedImage: generated.extractedImage,
 			availableImages: generated.availableImages,
+			xImageIndices: generated.availableImages.slice(0, 4).map((_, i) => i),
+			linkedinImageIndices: generated.availableImages.slice(0, 9).map((_, i) => i),
 			isIntro,
 			isBatched,
 			status: 'Draft',
@@ -130,7 +139,19 @@ export const handleGithubRelease = onRequest(async (req, res) => {
 		}
 
 		console.log(`Generated and saved draft ${draftRef.id} for ${repoName}`);
-		res.status(200).send('Webhook processed successfully');
+
+		if (autoPostEnabled) {
+			console.log(`Auto-Post enabled for user ${userId}. Triggering immediate publication...`);
+			try {
+				const result = await publishDraftInternal(userId, draftRef.id);
+				console.log(`Auto-Post successful for draft ${draftRef.id}:`, result);
+			} catch (publishError) {
+				console.error(`Auto-Post failed for draft ${draftRef.id}:`, publishError);
+				// We don't fail the webhook since the draft was already saved
+			}
+		}
+
+		res.status(200).send('Webhook processed successfully' + (autoPostEnabled ? ' (with Auto-Post)' : ''));
 	} catch (error) {
 		console.error('Webhook processing failed:', error);
 		res.status(500).send('Internal Server Error');

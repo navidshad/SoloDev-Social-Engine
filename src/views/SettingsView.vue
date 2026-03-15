@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
+import { Modal } from 'pilotui/complex'
 import { Card } from 'pilotui/elements'
 import { Input, TextArea, CheckboxInput } from 'pilotui/form'
 import { Button } from 'pilotui/elements'
@@ -12,8 +13,6 @@ const authStore = useAuthStore()
 const db = getFirestore()
 
 const config = ref({
-	xApiKey: '',
-	linkedInToken: '',
 	personaVoice: 'I write in a "build in public" style. I am humble but authoritative. I rarely use hashtags on X. I like to focus on the "why" behind the code. Use a conversational tone.',
 	autoPostEnabled: false,
 	geminiApiKey: ''
@@ -112,21 +111,30 @@ const toggleRepoTracking = async (repoName: string) => {
 	const repoRef = doc(db, `users/${authStore.user.uid}/trackedRepos`, sanitizedRepoName);
 
 	try {
+		const functions = getFunctions()
+		const toggleHook = httpsCallable(functions, 'toggleRepoWebhook')
+
 		if (newSet.has(repoName)) {
+			// Disable tracking
+			await toggleHook({ repoName, action: 'disable' })
 			await deleteDoc(repoRef);
 			newSet.delete(repoName);
 		} else {
+			// Enable tracking
+			// WEBHOOK_URL is now handled by the backend environment variable
+			const result = await toggleHook({ repoName, action: 'enable' }) as any
 			await setDoc(repoRef, {
 				repoName,
-				addedAt: new Date()
+				addedAt: new Date(),
+				githubHookId: result.data.hookId
 			});
 			newSet.add(repoName);
 			await checkRepoHistories([repoName]);
 		}
 		trackedRepoIds.value = newSet;
-	} catch (err) {
+	} catch (err: any) {
 		console.error("Error toggling repo tracking:", err)
-		toastError("Failed to update tracking status")
+		toastError(`Failed to update tracking: ${err.message}`)
 	}
 }
 
@@ -169,7 +177,8 @@ const saveSettings = async () => {
 	isSaving.value = true
 	try {
 		const docRef = doc(db, `users/${authStore.user.uid}/settings`, 'config')
-		await setDoc(docRef, config.value, { merge: true })
+		const { ...restConfig } = config.value as any;
+		await setDoc(docRef, restConfig, { merge: true })
 		toastSuccess("Settings saved successfully!")
 	} catch (error: any) {
 		console.error("Failed to save settings:", error)
@@ -196,6 +205,132 @@ const handleDisconnectGithub = async () => {
 		console.error(error)
 		const msg = error instanceof Error ? error.message : "Failed to disconnect GitHub account."
 		toastError(msg)
+	}
+}
+
+const isXModalOpen = ref(false)
+const testingX = ref(false)
+const xKeys = ref({
+	appKey: '',
+	appSecret: '',
+	accessToken: '',
+	accessSecret: ''
+})
+
+const handleTestAndSaveX = async (toggleModal: (state: boolean) => void) => {
+	if (!authStore.user?.uid) return;
+	testingX.value = true;
+	try {
+		const functions = getFunctions()
+		const testFn = httpsCallable<typeof xKeys.value, { success: boolean, username: string }>(functions, 'testXCredentials')
+		const result = await testFn(xKeys.value)
+
+		if (result.data.success) {
+			const username = result.data.username;
+			const userRef = doc(db, 'users', authStore.user.uid);
+			await setDoc(userRef, {
+				xAppKey: xKeys.value.appKey,
+				xAppSecret: xKeys.value.appSecret,
+				xAccessToken: xKeys.value.accessToken,
+				xAccessSecret: xKeys.value.accessSecret,
+				xUsername: username,
+				xConnectedAt: new Date(),
+			}, { merge: true });
+
+			authStore.setXConnected(true, username);
+			toastSuccess("X Account successfully connected!")
+			toggleModal(false)
+			xKeys.value = { appKey: '', appSecret: '', accessToken: '', accessSecret: '' }
+		}
+	} catch (error: any) {
+		console.error("Test X keys failed:", error)
+		toastError(`Failed to authenticate with X: ${error.message}`)
+	} finally {
+		testingX.value = false;
+	}
+}
+
+const handleDisconnectX = async () => {
+	if (!authStore.user?.uid) return;
+	testingX.value = true;
+	try {
+		const userRef = doc(db, 'users', authStore.user.uid);
+		// Import updateDoc and deleteField specifically for this
+		const { updateDoc, deleteField } = await import('firebase/firestore')
+		await updateDoc(userRef, {
+			xAppKey: deleteField(),
+			xAppSecret: deleteField(),
+			xAccessToken: deleteField(),
+			xAccessSecret: deleteField(),
+			xUsername: deleteField(),
+			xConnectedAt: deleteField(),
+		});
+		authStore.setXConnected(false, null);
+		toastSuccess("X Account disconnected.")
+	} catch (error: any) {
+		console.error("X Disconnect failed:", error)
+		toastError(`Failed to disconnect X account: ${error.message}`)
+	} finally {
+		testingX.value = false;
+	}
+}
+
+const isLinkedInModalOpen = ref(false)
+const testingLinkedIn = ref(false)
+const linkedInToken = ref('')
+
+const handleTestAndSaveLinkedIn = async (toggleModal: (state: boolean) => void) => {
+	if (!authStore.user?.uid || !linkedInToken.value) return;
+	testingLinkedIn.value = true;
+	try {
+		const functions = getFunctions()
+		const testFn = httpsCallable<{ accessToken: string }, { success: boolean, name: string, urn: string }>(functions, 'testLinkedInCredentials')
+		const result = await testFn({ accessToken: linkedInToken.value })
+
+		if (result.data.success) {
+			const username = result.data.name;
+			const urn = result.data.urn;
+			const userRef = doc(db, 'users', authStore.user.uid);
+
+			await setDoc(userRef, {
+				linkedInAccessToken: linkedInToken.value,
+				linkedInUrn: urn,
+				linkedInUsername: username,
+				linkedInConnectedAt: new Date(),
+			}, { merge: true });
+
+			authStore.setLinkedInConnected(true, username);
+			toastSuccess("LinkedIn Account successfully connected!")
+			toggleModal(false)
+			linkedInToken.value = ''
+		}
+	} catch (error: any) {
+		console.error("Test LinkedIn token failed:", error)
+		toastError(`Failed to authenticate with LinkedIn: ${error.message}`)
+	} finally {
+		testingLinkedIn.value = false;
+	}
+}
+
+const handleDisconnectLinkedIn = async () => {
+	if (!authStore.user?.uid) return;
+	testingLinkedIn.value = true;
+	try {
+		const userRef = doc(db, 'users', authStore.user.uid);
+		const { updateDoc, deleteField } = await import('firebase/firestore')
+		await updateDoc(userRef, {
+			linkedInAccessToken: deleteField(),
+			linkedInUrn: deleteField(),
+			linkedInUsername: deleteField(),
+			linkedInConnectedAt: deleteField(),
+		});
+		authStore.setLinkedInConnected(false, null);
+		toastSuccess("LinkedIn Account disconnected.")
+	} catch (error: any) {
+		console.error("LinkedIn Disconnect failed:", error)
+		toastError(`Failed to disconnect LinkedIn account: ${error.message}`)
+	} finally {
+		testingLinkedIn.value = false;
 	}
 }
 </script>
@@ -234,6 +369,113 @@ const handleDisconnectGithub = async () => {
 						<Button v-else variant="outline" size="sm" :disabled="authStore.githubLoading"
 							@click="handleConnectGithub">{{ authStore.githubLoading ? 'Connecting...' : 'Connect'
 							}}</Button>
+					</div>
+				</div>
+
+				<div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+					<div class="flex items-center gap-3">
+						<svg class="h-6 w-6 dark:text-white" fill="currentColor" viewBox="0 0 24 24">
+							<path
+								d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231 5.451-6.231zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77z" />
+						</svg>
+						<div>
+							<p class="font-medium dark:text-white">X (Twitter)</p>
+							<p v-if="authStore.isXConnected" class="text-sm text-green-500 font-medium">
+								✓ Connected{{ authStore.xUsername ? ` as ${authStore.xUsername}` : '' }}
+							</p>
+							<p v-else class="text-sm text-gray-500 dark:text-gray-400">Used to publish your tech updates
+							</p>
+						</div>
+					</div>
+					<div class="flex gap-2">
+						<Button v-if="authStore.isXConnected" variant="outline" size="sm" :disabled="testingX"
+							@click="handleDisconnectX">{{
+								testingX ? 'Disconnecting...' : 'Disconnect' }}</Button>
+
+						<Modal v-else v-model="isXModalOpen" title="Setup X (Twitter) Account" size="lg">
+							<template #trigger="{ toggleModal }">
+								<Button variant="outline" size="sm" @click="toggleModal(true)">Setup X Account</Button>
+							</template>
+							<template #default="{ toggleModal }">
+								<div class="space-y-4 pt-2">
+									<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+										To publish to X, you need to provide your OAuth 1.0a keys. Create an app in the
+										X Developer Portal with Read/Write permissions.
+									</p>
+									<Input v-model="xKeys.appKey" label="API Key (Consumer Key)"
+										placeholder="Enter API Key" type="password" />
+									<Input v-model="xKeys.appSecret" label="API Key Secret (Consumer Secret)"
+										placeholder="Enter API Key Secret" type="password" />
+									<Input v-model="xKeys.accessToken" label="Access Token"
+										placeholder="Enter Access Token" type="password" />
+									<Input v-model="xKeys.accessSecret" label="Access Token Secret"
+										placeholder="Enter Access Token Secret" type="password" />
+
+									<div
+										class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
+										<Button variant="outline" @click="toggleModal(false)">Cancel</Button>
+										<Button variant="primary"
+											:disabled="testingX || !xKeys.appKey || !xKeys.appSecret || !xKeys.accessToken || !xKeys.accessSecret"
+											@click="handleTestAndSaveX(toggleModal)">
+											{{ testingX ? 'Testing Connection...' : 'Test & Save' }}
+										</Button>
+									</div>
+								</div>
+							</template>
+						</Modal>
+					</div>
+				</div>
+
+				<div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+					<div class="flex items-center gap-3">
+						<svg class="h-6 w-6 dark:text-white" fill="currentColor" viewBox="0 0 24 24">
+							<path
+								d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+						</svg>
+						<div>
+							<p class="font-medium dark:text-white">LinkedIn</p>
+							<p v-if="authStore.isLinkedInConnected" class="text-sm text-green-500 font-medium">
+								✓ Connected{{ authStore.linkedInUsername ? ` as ${authStore.linkedInUsername}` : '' }}
+							</p>
+							<p v-else class="text-sm text-gray-500 dark:text-gray-400">Used to publish your tech updates
+							</p>
+						</div>
+					</div>
+					<div class="flex gap-2">
+						<Button v-if="authStore.isLinkedInConnected" variant="outline" size="sm"
+							:disabled="testingLinkedIn" @click="handleDisconnectLinkedIn">{{
+								testingLinkedIn ? 'Disconnecting...' : 'Disconnect' }}</Button>
+
+						<Modal v-else v-model="isLinkedInModalOpen" title="Setup LinkedIn Account" size="lg">
+							<template #trigger="{ toggleModal }">
+								<Button variant="outline" size="sm" @click="toggleModal(true)">Setup LinkedIn</Button>
+							</template>
+							<template #default="{ toggleModal }">
+								<div class="space-y-4 pt-2">
+									<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+										To publish to LinkedIn, you need to provide an OAuth 2.0 Access Token. You can
+										generate one from the LinkedIn Developer Portal under your App's Auth -> Token
+										Generator. Make sure it has the `w_member_social`, `openid`, and `profile`
+										scopes.
+										<br /><br />
+										<i>Note: If you don't see `openid` and `profile` available, make sure you have
+											added
+											the "Sign In with LinkedIn" product to your app!</i>
+									</p>
+									<Input v-model="linkedInToken" label="LinkedIn Access Token"
+										placeholder="Enter Access Token" type="password" />
+
+									<div
+										class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
+										<Button variant="outline" @click="toggleModal(false)">Cancel</Button>
+										<Button variant="primary" :disabled="testingLinkedIn || !linkedInToken"
+											@click="handleTestAndSaveLinkedIn(toggleModal)">
+											{{ testingLinkedIn ? 'Testing Connection...' : 'Test & Save' }}
+										</Button>
+									</div>
+								</div>
+							</template>
+						</Modal>
 					</div>
 				</div>
 			</div>
@@ -285,9 +527,6 @@ const handleDisconnectGithub = async () => {
 			<div class="p-6 space-y-4">
 				<h3 class="text-lg font-semibold dark:text-white">API & Integration Settings</h3>
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-					<Input v-model="config.xApiKey" label="X (Twitter) API Key" placeholder="sk-..." type="password" />
-					<Input v-model="config.linkedInToken" label="LinkedIn OAuth Token" placeholder="AQV..."
-						type="password" />
 					<Input v-model="config.geminiApiKey" label="Gemini API Key" placeholder="AI..." type="password" />
 				</div>
 			</div>
