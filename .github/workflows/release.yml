@@ -87,6 +87,8 @@ jobs:
             Group them logically (e.g., Features, Bug Fixes, Chores).
             Keep it concise but informative.
             
+            IMPORTANT: Return only the raw markdown content. Do not wrap the entire response in a markdown code block (e.g., do not use ```markdown ... ```).
+            
             Commits:
             $(cat commits.txt)
 
