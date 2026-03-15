@@ -9,7 +9,7 @@ export const generateInitialPost = onCall({ cors: true }, async (request) => {
 	}
 
 	const uid = request.auth.uid;
-	const { repoName } = request.data;
+	const { repoName, readmeImagePolicy: passedPolicy } = request.data;
 
 	if (!repoName) {
 		throw new HttpsError("invalid-argument", "The repoName parameter is required.");
@@ -71,7 +71,7 @@ export const generateInitialPost = onCall({ cors: true }, async (request) => {
 		});
 
 		const latestVersion = sortedReleases[sortedReleases.length - 1].tag_name;
-		const readmeImagePolicy = settingsData?.readmeImagePolicy || 'never';
+		const readmeImagePolicy = passedPolicy || settingsData?.readmeImagePolicy || 'never';
 
 		let readmeContent = "";
 		if (readmeImagePolicy === 'first' || readmeImagePolicy === 'always') {

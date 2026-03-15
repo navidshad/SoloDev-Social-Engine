@@ -40,6 +40,28 @@ export const regenerateDraft = onCall({ cors: true }, async (request) => {
 			throw new HttpsError("failed-precondition", "Gemini API Key is not configured in settings.");
 		}
 
+		const readmeImagePolicy = settingsData?.readmeImagePolicy || 'never';
+		let readmeContent = "";
+		if (readmeImagePolicy === 'always' || (readmeImagePolicy === 'first' && isIntro)) {
+			try {
+				const userDocSnap = await db.doc(`users/${uid}`).get();
+				const githubAccessToken = userDocSnap.data()?.githubAccessToken;
+				if (githubAccessToken) {
+					const readmeResponse = await fetch(`https://api.github.com/repos/${repoName}/readme`, {
+						headers: {
+							Authorization: `Bearer ${githubAccessToken}`,
+							Accept: 'application/vnd.github.v3.raw'
+						}
+					});
+					if (readmeResponse.ok) {
+						readmeContent = await readmeResponse.text();
+					}
+				}
+			} catch (err) {
+				console.error("Error fetching README during regeneration:", err);
+			}
+		}
+
 		// Generate the posts again
 		const generated = await generateSocialPosts(
 			geminiApiKey,
@@ -47,7 +69,7 @@ export const regenerateDraft = onCall({ cors: true }, async (request) => {
 			repoName,
 			version,
 			personaVoice,
-			{ isIntro, isBatched, repoUrl }
+			{ isIntro, isBatched, repoUrl, readmeContent }
 		);
 
 		// Update the draft

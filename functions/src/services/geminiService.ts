@@ -190,8 +190,14 @@ function extractImages(content: string, repoUrl?: string): string[] {
 
 	const matches = [...content.matchAll(markdownImageRegex), ...content.matchAll(htmlImageRegex)];
 	for (const m of matches) {
-		images.push(processImagePath(m[1]));
+		const processed = processImagePath(m[1]);
+		images.push(processed);
 	}
 
-	return images.filter(img => img.startsWith('http'));
+	const finalImages = images.filter(img => img.startsWith('http'));
+	if (finalImages.length === 0 && content.length > 0) {
+		console.log(`extractImages: No valid images found in content (length: ${content.length}). Original matches: ${matches.map(m => m[1]).join(', ')}`);
+	}
+
+	return finalImages;
 }
