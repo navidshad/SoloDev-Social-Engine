@@ -71,9 +71,28 @@ export const generateInitialPost = onCall({ cors: true }, async (request) => {
 		});
 
 		const latestVersion = sortedReleases[sortedReleases.length - 1].tag_name;
+		const readmeImagePolicy = settingsData?.readmeImagePolicy || 'never';
+
+		let readmeContent = "";
+		if (readmeImagePolicy === 'first' || readmeImagePolicy === 'always') {
+			console.log(`Fetching README for ${repoName} during initial post (policy: ${readmeImagePolicy})`);
+			try {
+				const readmeResponse = await fetch(`https://api.github.com/repos/${repoName}/readme`, {
+					headers: {
+						Authorization: `Bearer ${githubAccessToken}`,
+						Accept: 'application/vnd.github.v3.raw'
+					}
+				});
+				if (readmeResponse.ok) {
+					readmeContent = await readmeResponse.text();
+				}
+			} catch (readmeError) {
+				console.error(`Error fetching README for ${repoName}:`, readmeError);
+			}
+		}
 
 		// Generate the post
-		const generated = await generateSocialPosts(geminiApiKey, finalReleaseNotes, repoName, latestVersion, personaVoice, { isIntro: true, isBatched: true });
+		const generated = await generateSocialPosts(geminiApiKey, finalReleaseNotes, repoName, latestVersion, personaVoice, { isIntro: true, isBatched: true, readmeContent });
 
 		const draftData = {
 			repoName,

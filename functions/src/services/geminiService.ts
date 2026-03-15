@@ -18,7 +18,7 @@ export async function generateSocialPosts(
 	repoName: string,
 	version: string,
 	personaVoice: string,
-	options: { isIntro?: boolean, isBatched?: boolean, repoUrl?: string } = {}
+	options: { isIntro?: boolean, isBatched?: boolean, repoUrl?: string, readmeContent?: string } = {}
 ) {
 	if (!apiKey) {
 		throw new Error("Gemini API Key is required.");
@@ -45,6 +45,13 @@ export async function generateSocialPosts(
 		// Extract all unique markdown image URLs
 		const imageRegex = /!\[.*?\]\((.*?)\)/g;
 		const matches = Array.from(releaseNotes.matchAll(imageRegex));
+		
+		// Also extract from README if provided
+		if (options.readmeContent) {
+			const readmeMatches = Array.from(options.readmeContent.matchAll(imageRegex));
+			matches.push(...readmeMatches);
+		}
+
 		const availableImages = [...new Set(matches.map(m => m[1]))].filter(url => url.startsWith('http'));
 		const extractedImage = availableImages.length > 0 ? availableImages[0] : null;
 

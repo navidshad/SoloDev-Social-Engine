@@ -15,7 +15,8 @@ const db = getFirestore()
 const config = ref({
 	personaVoice: 'I write in a "build in public" style. I am humble but authoritative. I rarely use hashtags on X. I like to focus on the "why" behind the code. Use a conversational tone.',
 	autoPostEnabled: false,
-	geminiApiKey: ''
+	geminiApiKey: '',
+	readmeImagePolicy: 'first' // 'never', 'first', 'always'
 })
 
 const isSaving = ref(false)
@@ -481,48 +482,183 @@ const handleDisconnectLinkedIn = async () => {
 			</div>
 		</Card>
 
-		<!-- Repository Tracking -->
+		<!-- Repository Tracking & Automation -->
 		<Card v-if="authStore.isGithubConnected">
-			<div class="p-6 space-y-4">
-				<div class="flex items-center justify-between">
-					<div>
-						<h3 class="text-lg font-semibold dark:text-white">Tracked Repositories</h3>
-						<p class="text-sm text-gray-500 dark:text-gray-400">Select which repositories you want to track
-							for automated social media posts. <span
-								class="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-xs ml-1">Changes save
-								automatically</span></p>
-						<p class="text-xs text-blue-500 dark:text-blue-400 mt-1">
-							🚀 Need help automating your releases? 
-							<a href="https://gist.github.com/navidshad/9b78557cf957f804db56d2dadd1faced" target="_blank" class="underline hover:text-blue-600 font-medium">
-								Check out our Auto-Release Gist
+			<div class="p-6 space-y-6">
+				<!-- Header Section -->
+				<div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
+					<div class="space-y-1">
+						<h3 class="text-lg font-semibold dark:text-white flex items-center gap-2">
+							GitHub Automation
+							<span
+								class="text-[10px] bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded font-normal text-gray-500 uppercase tracking-wider">Sync
+								Active</span>
+						</h3>
+						<p class="text-sm text-gray-500 dark:text-gray-400 max-w-xl">
+							Connect your repositories to automatically generate and publish social media updates for
+							every new
+							release.
+							<a href="https://gist.github.com/navidshad/9b78557cf957f804db56d2dadd1faced" target="_blank"
+								class="inline-flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-600 font-medium transition-colors">
+								<span>🚀 How to automate releases</span>
+								<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+									stroke-width="2.5">
+									<path
+										d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6m6-3l5 5m0-5l-5 5m5-5H12" />
+								</svg>
 							</a>
 						</p>
 					</div>
+
+
 				</div>
 
-				<div v-if="isLoadingRepos" class="text-sm text-gray-500">Loading repositories...</div>
-				<div v-else-if="githubRepos.length === 0" class="text-sm text-gray-500">No repositories found or token
-					lacks permissions.</div>
-				<div v-else
-					class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto pr-2 rounded-lg border border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 p-2">
-					<div v-for="repo in githubRepos" :key="repo.id"
-						class="flex items-center gap-3 p-2 hover:bg-white dark:hover:bg-gray-700 rounded transition-colors w-full overflow-hidden">
-						<div class="flex items-center gap-3 flex-1 min-w-0">
-							<CheckboxInput :modelValue="trackedRepoIds.has(repo.full_name)"
-								@update:modelValue="toggleRepoTracking(repo.full_name)" :text="repo.name"
-								class="truncate" />
+				<!-- Repository Selection Grid -->
+				<div class="space-y-3">
+					<div class="flex items-center justify-between px-1">
+						<span class="text-xs font-bold text-gray-400 uppercase tracking-widest">Select
+							Repositories</span>
+						<span v-if="isLoadingRepos" class="text-[10px] text-blue-500 animate-pulse">Checking
+							GitHub...</span>
+					</div>
+
+					<div v-if="githubRepos.length === 0 && !isLoadingRepos"
+						class="p-8 text-center border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-2xl">
+						<p class="text-sm text-gray-500">No repositories found. Ensure your token has enough
+							permissions.</p>
+					</div>
+
+					<div v-else
+						class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-2 custom-scrollbar">
+						<div v-for="repo in githubRepos" :key="repo.id"
+							class="group flex items-center justify-between p-3 bg-white dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50 rounded-xl hover:border-blue-200 dark:hover:border-blue-900/50 hover:shadow-xs transition-all duration-200">
+							<div class="flex items-center gap-3 min-w-0">
+								<CheckboxInput :modelValue="trackedRepoIds.has(repo.full_name)"
+									@update:modelValue="toggleRepoTracking(repo.full_name)" />
+								<div class="flex flex-col min-w-0">
+									<span class="text-sm font-medium truncate dark:text-gray-200">{{ repo.name }}</span>
+									<span v-if="repo.private"
+										class="text-[9px] text-orange-500 font-bold uppercase tracking-tighter">Private</span>
+								</div>
+							</div>
+
+							<div class="flex items-center shrink-0">
+								<Button
+									v-if="trackedRepoIds.has(repo.full_name) && repoHistoryMap[repo.full_name] === false"
+									variant="ghost" size="sm"
+									class="h-7! px-2! text-[10px] text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+									:disabled="isGeneratingMap[repo.full_name]"
+									@click="generateInitialPost(repo.full_name)">
+									{{ isGeneratingMap[repo.full_name] ? '...' : '+ Generate Draft' }}
+								</Button>
+								<span v-else-if="trackedRepoIds.has(repo.full_name)"
+									class="text-[10px] text-green-500 font-medium px-2 italic">Active</span>
+							</div>
 						</div>
-						<div class="flex items-center gap-2 shrink-0 ml-auto">
-							<span v-if="repo.private"
-								class="text-xs bg-gray-200 dark:bg-gray-600 px-1.5 py-0.5 rounded text-gray-600 dark:text-gray-300">Private</span>
-							<Button
-								v-if="trackedRepoIds.has(repo.full_name) && repoHistoryMap[repo.full_name] === false"
-								size="sm" variant="secondary" class="py-1! px-2! text-xs h-auto"
-								:disabled="isGeneratingMap[repo.full_name]"
-								@click="generateInitialPost(repo.full_name)">
-								{{ isGeneratingMap[repo.full_name] ? 'Generating...' : '✨ Generate Initial Post' }}
-							</Button>
-						</div>
+					</div>
+				</div>
+
+				<!-- README Image Policy -->
+				<div class="space-y-4 pt-6 border-t border-gray-100 dark:border-gray-700">
+					<div class="space-y-1">
+						<h4 class="text-sm font-bold dark:text-white">README Image Strategy</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400">
+							Choose how we handle images found in your repository's README.
+						</p>
+					</div>
+
+					<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+						<button @click="config.readmeImagePolicy = 'never'" :class="[
+							'relative flex flex-col p-4 text-left border rounded-2xl transition-all duration-300 group',
+							config.readmeImagePolicy === 'never'
+								? 'border-blue-500 bg-blue-50/30 dark:bg-blue-900/10'
+								: 'border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700'
+						]">
+							<div v-if="config.readmeImagePolicy === 'never'" class="absolute top-3 right-3">
+								<div class="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+							</div>
+							<span class="text-xs font-bold mb-1"
+								:class="config.readmeImagePolicy === 'never' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'">Strict</span>
+							<span class="text-[10px] text-gray-500 leading-normal">Ignore README. Only use images from
+								specific
+								release notes.</span>
+						</button>
+
+						<button @click="config.readmeImagePolicy = 'first'" :class="[
+							'relative flex flex-col p-4 text-left border rounded-2xl transition-all duration-300 group',
+							config.readmeImagePolicy === 'first'
+								? 'border-blue-500 bg-blue-50/30 dark:bg-blue-900/10'
+								: 'border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700'
+						]">
+							<div v-if="config.readmeImagePolicy === 'first'" class="absolute top-3 right-3">
+								<div class="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+							</div>
+							<span class="text-xs font-bold mb-1"
+								:class="config.readmeImagePolicy === 'first' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'">Smart
+								(First)</span>
+							<span class="text-[10px] text-gray-500 leading-normal italic">Recommended. Check README only
+								for the
+								project's introduction.</span>
+						</button>
+
+						<button @click="config.readmeImagePolicy = 'always'" :class="[
+							'relative flex flex-col p-4 text-left border rounded-2xl transition-all duration-300 group',
+							config.readmeImagePolicy === 'always'
+								? 'border-blue-500 bg-blue-50/30 dark:bg-blue-900/10'
+								: 'border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700'
+						]">
+							<div v-if="config.readmeImagePolicy === 'always'" class="absolute top-3 right-3">
+								<div class="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+							</div>
+							<span class="text-xs font-bold mb-1"
+								:class="config.readmeImagePolicy === 'always' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'">Always</span>
+							<span class="text-[10px] text-gray-500 leading-normal">Always scan README for fresh images
+								or
+								updated logos.</span>
+						</button>
+					</div>
+				</div>
+
+				<div class="space-y-4 pt-6 border-t border-gray-100 dark:border-gray-700">
+					<div class="space-y-1">
+						<h4 class="text-sm font-bold dark:text-white">Auto-Post Delivery</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400">
+							Choose if AI-generated posts should be published immediately or kept as drafts.
+						</p>
+					</div>
+
+					<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+						<button @click="config.autoPostEnabled = false" :class="[
+							'relative flex flex-col p-4 text-left border rounded-2xl transition-all duration-300 group',
+							config.autoPostEnabled === false
+								? 'border-blue-500 bg-blue-50/30 dark:bg-blue-900/10'
+								: 'border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700'
+						]">
+							<div v-if="config.autoPostEnabled === false" class="absolute top-3 right-3">
+								<div class="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+							</div>
+							<span class="text-xs font-bold mb-1"
+								:class="config.autoPostEnabled === false ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'">Manual Review</span>
+							<span class="text-[10px] text-gray-500 leading-normal">Save as drafts first. You decide when
+								they
+								go live.</span>
+						</button>
+
+						<button @click="config.autoPostEnabled = true" :class="[
+							'relative flex flex-col p-4 text-left border rounded-2xl transition-all duration-300 group',
+							config.autoPostEnabled === true
+								? 'border-blue-500 bg-blue-50/30 dark:bg-blue-900/10'
+								: 'border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700'
+						]">
+							<div v-if="config.autoPostEnabled === true" class="absolute top-3 right-3">
+								<div class="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+							</div>
+							<span class="text-xs font-bold mb-1"
+								:class="config.autoPostEnabled === true ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'">Auto-Post</span>
+							<span class="text-[10px] text-gray-500 leading-normal">Automatically publish to social
+								platforms
+								as soon as ready.</span>
+						</button>
 					</div>
 				</div>
 			</div>
@@ -546,20 +682,6 @@ const handleDisconnectLinkedIn = async () => {
 					for every generation.</p>
 				<TextArea v-model="config.personaVoice" rows="5" label="Your Voice"
 					placeholder="Describe how you talk online..." />
-			</div>
-		</Card>
-
-		<!-- Automation Config -->
-		<Card>
-			<div class="p-6 space-y-4 flex flex-col sm:flex-row items-start sm:items-center justify-between">
-				<div>
-					<h3 class="text-lg font-semibold dark:text-white">Automation Rules</h3>
-					<p class="text-sm text-gray-500 dark:text-gray-400">Choose whether AI-generated posts should go live
-						immediately.</p>
-				</div>
-				<div class="mt-4 sm:mt-0 flex gap-2">
-					<CheckboxInput v-model="config.autoPostEnabled" label="Enable Auto-Post" />
-				</div>
 			</div>
 		</Card>
 

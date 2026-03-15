@@ -102,10 +102,37 @@ export const handleGithubRelease = onRequest({ secrets: ["X_API_KEY", "X_API_SEC
 
 		const personaVoice = settings?.personaVoice || 'Write a general tech post.';
 		const geminiApiKey = settings?.geminiApiKey;
+		const readmeImagePolicy = settings?.readmeImagePolicy || 'never';
 		const repoUrl = payload.release?.html_url || payload.repository?.html_url || '';
 
+		let readmeContent = "";
+		if (readmeImagePolicy === 'always' || (readmeImagePolicy === 'first' && isIntro)) {
+			console.log(`Fetching README for ${repoName} (policy: ${readmeImagePolicy}, isIntro: ${isIntro})`);
+			try {
+				// We need the github token to fetch readme
+				const userDocSnap = await db.doc(`users/${userId}`).get();
+				const githubAccessToken = userDocSnap.data()?.githubAccessToken;
+				if (githubAccessToken) {
+					const readmeResponse = await fetch(`https://api.github.com/repos/${repoName}/readme`, {
+						headers: {
+							Authorization: `Bearer ${githubAccessToken}`,
+							Accept: 'application/vnd.github.v3.raw' // Get raw content
+						}
+					});
+					if (readmeResponse.ok) {
+						readmeContent = await readmeResponse.text();
+						console.log(`Successfully fetched README for ${repoName}`);
+					} else {
+						console.error(`Failed to fetch README for ${repoName}: ${readmeResponse.statusText}`);
+					}
+				}
+			} catch (readmeError) {
+				console.error(`Error fetching README for ${repoName}:`, readmeError);
+			}
+		}
+
 		console.log(`Generating posts for ${repoName} ${version} | isIntro: ${isIntro} | isBatched: ${isBatched}`);
-		const generated = await generateSocialPosts(geminiApiKey, finalReleaseNotes, repoName, version, personaVoice, { isIntro, isBatched, repoUrl });
+		const generated = await generateSocialPosts(geminiApiKey, finalReleaseNotes, repoName, version, personaVoice, { isIntro, isBatched, repoUrl, readmeContent });
 
 		const draftData = {
 			repoName,
