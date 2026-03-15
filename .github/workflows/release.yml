@@ -28,20 +28,65 @@ jobs:
       - name: Bump version and create tag
         id: version-bump
         run: |
-          # Increment patch version, create commit and tag
-          npm version patch -m "chore: release %s [skip ci]"
-          VERSION=$(node -p "require('./package.json').version")
+          # Check if the commit message starts with "release:"
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          if [[ "$COMMIT_MSG" == release:* ]]; then
+            echo "Manual release detected. Skipping auto-bump."
+            VERSION=$(node -p "require('./package.json').version")
+            # Create the tag manually since npm version was skipped
+            git tag "v$VERSION"
+          else
+            # Increment patch version, create commit and tag
+            npm version patch -m "chore: release %s [skip ci]"
+            VERSION=$(node -p "require('./package.json').version")
+          fi
           echo "version=v$VERSION" >> $GITHUB_OUTPUT
 
       - name: Push changes and tag
         run: |
           git push origin main --follow-tags
 
+      - name: Get Recent Commits
+        id: commits
+        run: |
+          # Get commits since last tag or all commits if no tags exist
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LATEST_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"* %s")
+          else
+            COMMITS=$(git log "$LATEST_TAG..HEAD" --pretty=format:"* %s")
+          fi
+          # We need to escape newlines for GitHub Actions output if we wanted to pass it as an environment variable, 
+          # but we can also just use the git command directly in the prompt or use a temp file.
+          # Let's save to a file for better handling of multi-line content.
+          echo "$COMMITS" > commits.txt
+
+      - name: Generate AI Release Notes
+        id: gemini-notes
+        uses: google-github-actions/run-gemini-cli@v0
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          gemini_model: gemini-2.5-flash
+          prompt: |
+            You are a technical writer specialized in software release notes.
+            Analyze the following commit history and generate a professional, engaging summary of the new features, improvements, and fixes.
+            Group them logically (e.g., Features, Bug Fixes, Chores).
+            Keep it concise but informative.
+            
+            Commits:
+            $(cat commits.txt)
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version-bump.outputs.version }}
           name: Release ${{ steps.version-bump.outputs.version }}
+          body: |
+            ## ✨ AI-Generated Summary
+            ${{ steps.gemini-notes.outputs.summary }}
+            
+            ---
+            
           generate_release_notes: true
           draft: false
           prerelease: false
