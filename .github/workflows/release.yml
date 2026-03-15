@@ -28,14 +28,30 @@ jobs:
       - name: Get Recent Commits
         id: commits
         run: |
-          # Get commits since last tag or all commits if no tags exist
+          # Ensure full history and tags are available
+          git fetch --prune --unshallow || true
+          git fetch --tags --force
+          
+          # Get commits since last tag
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
           if [ -z "$LATEST_TAG" ]; then
+            echo "No previous tag found. Using all commits."
             COMMITS=$(git log --pretty=format:"* %s")
           else
+            echo "Found latest tag: $LATEST_TAG. Getting commits since then."
+            # Use git log with the range. If the range only includes the current 'release:' commit, 
+            # it might look empty to Gemini.
             COMMITS=$(git log "$LATEST_TAG..HEAD" --pretty=format:"* %s")
+            
+            # Fallback: If COMMITS is empty or very short, get the last 20 commits for context
+            if [ -z "$COMMITS" ] || [ $(echo "$COMMITS" | wc -l) -lt 2 ]; then
+              echo "Commit range was too short. Falling back to last 20 commits."
+              COMMITS=$(git log -n 20 --pretty=format:"* %s")
+            fi
           fi
-          # Save to a file for better handling of multi-line content
+          
+          # Save to a file
           echo "$COMMITS" > commits.txt
 
       - name: Bump version and create tag
