@@ -491,6 +491,12 @@ const handleDisconnectLinkedIn = async () => {
 							for automated social media posts. <span
 								class="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-xs ml-1">Changes save
 								automatically</span></p>
+						<p class="text-xs text-blue-500 dark:text-blue-400 mt-1">
+							🚀 Need help automating your releases? 
+							<a href="https://gist.github.com/navidshad/9b78557cf957f804db56d2dadd1faced" target="_blank" class="underline hover:text-blue-600 font-medium">
+								Check out our Auto-Release Gist
+							</a>
+						</p>
 					</div>
 				</div>
 
