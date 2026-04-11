@@ -5,6 +5,7 @@ import { Card, Button, Tabs, Icon } from 'pilotui/elements'
 import { TextArea, Input } from 'pilotui/form'
 import { useAuthStore } from '../stores/auth'
 import { getFirestore, doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore'
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import { toastSuccess, toastError } from 'pilotui/toast'
 
@@ -38,6 +39,8 @@ const activeTab = ref('x')
 const proposedText = ref('')
 const isComparing = ref(false)
 const isRegenerating = ref(false)
+const isUploading = ref(false)
+const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const tabs = computed(() => [
 	{ id: 'x', label: 'X (Twitter)', disabled: isRefining.value },
@@ -78,6 +81,7 @@ const saveDraft = async () => {
 			linkedinPost: draft.value.linkedinPost,
 			xImageIndices: draft.value.xImageIndices || [],
 			linkedinImageIndices: draft.value.linkedinImageIndices || [],
+			availableImages: draft.value.availableImages || [],
 			updatedAt: new Date()
 		})
 		toastSuccess("Draft saved successfully!")
@@ -91,7 +95,7 @@ const saveDraft = async () => {
 
 const refineAI = async () => {
 	if (!draft.value || !refinementPrompt.value || !authStore.user?.uid) return
-	
+
 	isRefining.value = true
 	try {
 		const currentText = activeTab.value === 'x' ? draft.value.xPost : draft.value.linkedinPost
@@ -226,13 +230,13 @@ const regenerate = async () => {
 			draft.value.linkedinPost = result.data.linkedinPost
 			draft.value.extractedImage = result.data.extractedImage
 			draft.value.availableImages = result.data.availableImages
-			
+
 			// Reset indices to select first few images by default
 			if (result.data.availableImages) {
 				draft.value.xImageIndices = result.data.availableImages.slice(0, 4).map((_, i) => i)
 				draft.value.linkedinImageIndices = result.data.availableImages.slice(0, 9).map((_, i) => i)
 			}
-			
+
 			toastSuccess("Content regenerated successfully!")
 		}
 	} catch (error: any) {
@@ -254,6 +258,92 @@ const removeDraft = async () => {
 			console.error("Error removing draft:", error)
 		}
 	}
+}
+
+const triggerFileInput = () => {
+	fileInputRef.value?.click()
+}
+
+const uploadImage = async (event: Event) => {
+	const target = event.target as HTMLInputElement
+	const file = target.files?.[0]
+	if (!file || !draft.value || !authStore.user?.uid) return
+
+	// Validate
+	if (!file.type.startsWith('image/')) {
+		toastError('Please select an image file.')
+		return
+	}
+	if (file.size > 5 * 1024 * 1024) {
+		toastError('Image must be smaller than 5MB.')
+		return
+	}
+
+	isUploading.value = true
+	try {
+		const storage = getStorage()
+		const fileName = `${Date.now()}_${file.name}`
+		const path = `users/${authStore.user.uid}/draft-images/${draft.value.id}/${fileName}`
+		const fileRef = storageRef(storage, path)
+
+		await uploadBytes(fileRef, file, { contentType: file.type })
+		const downloadURL = await getDownloadURL(fileRef)
+
+		// Append to available images
+		if (!draft.value.availableImages) draft.value.availableImages = []
+		draft.value.availableImages.push(downloadURL)
+
+		// Auto-select for current platform
+		const newIndex = draft.value.availableImages.length - 1
+		const key = activeTab.value === 'x' ? 'xImageIndices' : 'linkedinImageIndices'
+		if (!draft.value[key]) draft.value[key] = []
+		const limit = activeTab.value === 'x' ? 4 : 9
+		if ((draft.value[key] as number[]).length < limit) {
+			(draft.value[key] as number[]).push(newIndex)
+		}
+
+		toastSuccess('Image uploaded!')
+	} catch (error: any) {
+		console.error('Image upload failed:', error)
+		toastError(`Upload failed: ${error.message}`)
+	} finally {
+		isUploading.value = false
+		// Reset input so the same file can be re-selected
+		if (target) target.value = ''
+	}
+}
+
+const removeImage = async (index: number) => {
+	if (!draft.value) return
+	if (!confirm('Are you sure you want to remove this image?')) return
+
+	const imageUrl = draft.value.availableImages?.[index]
+	if (!imageUrl) return
+
+	// Delete from Firebase Storage if it's an uploaded image
+	if (imageUrl.includes('draft-images') && imageUrl.includes('firebasestorage')) {
+		try {
+			const storage = getStorage()
+			const fileRef = storageRef(storage, imageUrl)
+			await deleteObject(fileRef)
+		} catch (error) {
+			console.warn('Could not delete from storage (may already be removed):', error)
+		}
+	}
+
+	// Remove from availableImages
+	draft.value.availableImages!.splice(index, 1)
+
+	// Fix selection indices for both platforms
+	const fixIndices = (indices?: number[]) => {
+		if (!indices) return []
+		return indices
+			.filter(i => i !== index)
+			.map(i => i > index ? i - 1 : i)
+	}
+
+	draft.value.xImageIndices = fixIndices(draft.value.xImageIndices)
+	draft.value.linkedinImageIndices = fixIndices(draft.value.linkedinImageIndices)
 }
 </script>
 
@@ -361,14 +451,18 @@ const removeDraft = async () => {
 								<TextArea v-model="proposedText" rows="12" class="flex-1 text-lg border-primary/30"
 									readonly />
 							</div>
-							
+
 							<!-- AI Refinement Loading Overlay -->
-							<div v-if="isRefining" class="absolute inset-0 z-20 bg-white/60 dark:bg-gray-900/60 backdrop-blur-[2px] flex items-center justify-center">
-								<div class="flex flex-col items-center gap-3 p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700">
+							<div v-if="isRefining"
+								class="absolute inset-0 z-20 bg-white/60 dark:bg-gray-900/60 backdrop-blur-[2px] flex items-center justify-center">
+								<div
+									class="flex flex-col items-center gap-3 p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700">
 									<Icon name="IconLoader" class="w-10 h-10 animate-spin text-primary" />
 									<div class="flex flex-col items-center">
-										<p class="text-sm font-bold dark:text-white uppercase tracking-widest">AI is thinking...</p>
-										<p class="text-[10px] text-gray-400 mt-1 italic">Refining your content based on prompt</p>
+										<p class="text-sm font-bold dark:text-white uppercase tracking-widest">AI is
+											thinking...</p>
+										<p class="text-[10px] text-gray-400 mt-1 italic">Refining your content based on
+											prompt</p>
 									</div>
 								</div>
 							</div>
@@ -396,8 +490,7 @@ const removeDraft = async () => {
 						</div>
 
 						<!-- Image Preview & Picker -->
-						<div v-if="draft.availableImages && draft.availableImages.length > 0"
-							class="px-4 pb-4 shrink-0">
+						<div class="px-4 pb-4 shrink-0">
 							<div
 								class="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700">
 								<div
@@ -412,7 +505,7 @@ const removeDraft = async () => {
 
 								<div class="flex gap-2 overflow-x-auto pb-2">
 									<div v-for="(img, idx) in draft.availableImages" :key="idx"
-										class="relative group flex-none">
+										class="flex flex-col items-center gap-1 flex-none">
 										<button @click="toggleImageSelection(idx)" :disabled="isRefining"
 											class="w-24 h-24 rounded-lg border-2 transition-all overflow-hidden relative block"
 											:class="isImageSelected(idx)
@@ -425,16 +518,32 @@ const removeDraft = async () => {
 												class="absolute top-1 right-1 bg-primary text-white rounded-full p-0.5 shadow-sm">
 												<Icon name="IconCheck" class="w-3 h-3" />
 											</div>
+										</button>
 
-											<!-- Hover Index Indicator -->
-											<div
-												class="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[10px] text-center opacity-0 group-hover:opacity-100 transition-opacity">
-												Image #{{ idx + 1 }}
-											</div>
+										<!-- Remove Button -->
+										<button @click="removeImage(idx)" :disabled="isRefining"
+											class="text-[10px] text-red-400 hover:text-red-600 transition-colors">
+											Remove
 										</button>
 									</div>
+
+									<!-- Upload Button -->
+									<div class="flex-none">
+										<button @click="triggerFileInput" :disabled="isUploading || isRefining"
+											class="w-24 h-24 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-primary dark:hover:border-primary transition-all flex flex-col items-center justify-center gap-1.5 text-gray-400 hover:text-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+											<Icon v-if="isUploading" name="IconLoader" class="w-5 h-5 animate-spin" />
+											<template v-else>
+												<Icon name="IconPlus" class="w-5 h-5" />
+												<span
+													class="text-[9px] font-medium uppercase tracking-wider">Upload</span>
+											</template>
+										</button>
+										<input ref="fileInputRef" type="file" accept="image/*" class="hidden"
+											@change="uploadImage" />
+									</div>
 								</div>
-								<p v-if="draft.availableImages.length > 5" class="text-[9px] text-gray-400 mt-2 italic">
+								<p v-if="draft.availableImages && draft.availableImages.length > 5"
+									class="text-[9px] text-gray-400 mt-2 italic">
 									Tip: You can select multiple images by clicking them.
 								</p>
 							</div>
@@ -446,17 +555,20 @@ const removeDraft = async () => {
 						<div class="flex flex-col gap-4">
 							<!-- Quick Actions -->
 							<div class="flex flex-wrap gap-2">
-								<Button variant="outline" size="sm" @click="quickRefine('shorten')" class="text-xs" :disabled="isRefining">
+								<Button variant="outline" size="sm" @click="quickRefine('shorten')" class="text-xs"
+									:disabled="isRefining">
 									⚡ Shorten to fit
 								</Button>
-								<Button variant="outline" size="sm" @click="quickRefine('emojis')" class="text-xs" :disabled="isRefining">
+								<Button variant="outline" size="sm" @click="quickRefine('emojis')" class="text-xs"
+									:disabled="isRefining">
 									✨ Add Emojis
 								</Button>
-								<Button variant="outline" size="sm" @click="quickRefine('professional')"
-									class="text-xs" :disabled="isRefining">
+								<Button variant="outline" size="sm" @click="quickRefine('professional')" class="text-xs"
+									:disabled="isRefining">
 									👔 Professional
 								</Button>
-								<Button variant="outline" size="sm" @click="quickRefine('casual')" class="text-xs" :disabled="isRefining">
+								<Button variant="outline" size="sm" @click="quickRefine('casual')" class="text-xs"
+									:disabled="isRefining">
 									👋 Casual
 								</Button>
 							</div>
