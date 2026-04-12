@@ -25,6 +25,7 @@ interface Draft {
 	availableImages?: string[];
 	xImageIndices?: number[];
 	linkedinImageIndices?: number[];
+	linkedinAsPdf?: boolean;
 	status: string;
 	includedReleases?: string[];
 }
@@ -81,6 +82,7 @@ const saveDraft = async () => {
 			linkedinPost: draft.value.linkedinPost,
 			xImageIndices: draft.value.xImageIndices || [],
 			linkedinImageIndices: draft.value.linkedinImageIndices || [],
+			linkedinAsPdf: draft.value.linkedinAsPdf || false,
 			availableImages: draft.value.availableImages || [],
 			updatedAt: new Date()
 		})
@@ -173,7 +175,8 @@ const publish = async () => {
 		const result = await publishDraftFn({
 			draftId: draft.value.id,
 			publishToX: activeTab.value === 'x',
-			publishToLinkedIn: activeTab.value === 'linkedin'
+			publishToLinkedIn: activeTab.value === 'linkedin',
+			linkedinAsPdf: draft.value.linkedinAsPdf || false
 		}) as any
 
 		if (result.data.success) {
@@ -491,6 +494,16 @@ const removeImage = async (index: number) => {
 
 						<!-- Image Preview & Picker -->
 						<div class="px-4 pb-4 shrink-0">
+							<!-- PDF Carousel Toggle (LinkedIn only) -->
+							<label v-if="activeTab === 'linkedin'"
+								class="flex items-center gap-2.5 mb-3 px-4 py-2.5 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800/40 cursor-pointer select-none transition-colors hover:bg-blue-100 dark:hover:bg-blue-900/30">
+								<input type="checkbox" v-model="draft.linkedinAsPdf"
+									class="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/50" />
+								<div class="flex flex-col">
+									<span class="text-xs font-semibold text-blue-700 dark:text-blue-300">Publish as PDF Carousel</span>
+									<span class="text-[10px] text-blue-500 dark:text-blue-400 leading-tight">Merge selected images into a swipeable PDF document</span>
+								</div>
+							</label>
 							<div
 								class="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700">
 								<div

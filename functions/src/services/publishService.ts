@@ -8,7 +8,7 @@ import { publishToLinkedIn } from "./linkedinService";
  * @param draftId The ID of the draft to publish.
  * @returns The result of the publication.
  */
-export async function publishDraftInternal(userId: string, draftId: string, options: { publishToX: boolean, publishToLinkedIn: boolean } = { publishToX: true, publishToLinkedIn: true }) {
+export async function publishDraftInternal(userId: string, draftId: string, options: { publishToX: boolean, publishToLinkedIn: boolean, linkedinAsPdf?: boolean } = { publishToX: true, publishToLinkedIn: true }) {
 	const db = admin.firestore();
 
 	// 1. Fetch Draft
@@ -62,7 +62,7 @@ export async function publishDraftInternal(userId: string, draftId: string, opti
 	}
 
 	if (options.publishToLinkedIn) {
-		promises.push(publishToLinkedIn(draft.linkedinPost, linkedinImages, linkedInAccessToken, linkedInUrn));
+		promises.push(publishToLinkedIn(draft.linkedinPost, linkedinImages, linkedInAccessToken, linkedInUrn, options.linkedinAsPdf || false));
 		liIndex = promises.length - 1;
 	}
 
