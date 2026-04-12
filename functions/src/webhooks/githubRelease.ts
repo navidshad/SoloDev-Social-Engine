@@ -59,53 +59,90 @@ export const handleGithubRelease = onRequest({ secrets: ["X_API_KEY", "X_API_SEC
 		const trackedRepoRef = db.doc(`users/${userId}/trackedRepos/${sanitizedRepoName}`);
 		const trackedRepoSnap = await trackedRepoRef.get();
 
-		let isIntro = false;
+		if (!trackedRepoSnap.exists) {
+			await trackedRepoRef.set({
+				repoName,
+				addedAt: admin.firestore.FieldValue.serverTimestamp()
+			});
+		}
+
 		let isBatched = false;
 		let finalReleaseNotes = releaseNotes;
 		let includedReleases: string[] = [version];
 		const existingDraftsToDiscard: string[] = [];
 
-		if (!trackedRepoSnap.exists) {
-			// First time seeing this repo -> Intro post
-			isIntro = true;
-			await trackedRepoRef.set({
-				repoName,
-				addedAt: admin.firestore.FieldValue.serverTimestamp()
+		// Check for existing drafts to batch
+		const existingDraftsSnap = await db.collection(`users/${userId}/drafts`)
+			.where('repoName', '==', repoName)
+			.where('status', '==', 'Draft')
+			.get();
+
+		if (!existingDraftsSnap.empty) {
+			isBatched = true;
+			const notes: string[] = [];
+			existingDraftsSnap.forEach(doc => {
+				existingDraftsToDiscard.push(doc.id);
+				const data = doc.data();
+				notes.push(`=== ${data.version || 'Batched Update'} ===\n${data.releaseNotes}`);
+				if (data.includedReleases) {
+					includedReleases.push(...data.includedReleases);
+				} else if (data.version) {
+					includedReleases.push(data.version);
+				}
 			});
-		} else {
-			// Already tracked, check for existing drafts to batch
-			const existingDraftsSnap = await db.collection(`users/${userId}/drafts`)
-				.where('repoName', '==', repoName)
-				.where('status', '==', 'Draft')
-				.get();
-
-			if (!existingDraftsSnap.empty) {
-				isBatched = true;
-				const notes: string[] = [];
-				existingDraftsSnap.forEach(doc => {
-					existingDraftsToDiscard.push(doc.id);
-					const data = doc.data();
-					notes.push(`=== ${data.version || 'Batched Update'} ===\n${data.releaseNotes}`);
-					if (data.includedReleases) {
-						includedReleases.push(...data.includedReleases);
-					} else if (data.version) {
-						includedReleases.push(data.version);
-					}
-				});
-				notes.push(`=== ${version} ===\n${releaseNotes}`);
-				finalReleaseNotes = notes.join('\n\n');
-
-				// Deduplicate just in case
-				includedReleases = [...new Set(includedReleases)];
-			}
+			notes.push(`=== ${version} ===\n${releaseNotes}`);
+			finalReleaseNotes = notes.join('\n\n');
+			includedReleases = [...new Set(includedReleases)];
 		}
+
+		// Check if it's the first time we're seeing this repo by checking for ALL existing drafts/published (limit 1)
+		const draftsQuery = await db.collection(`users/${userId}/drafts`)
+			.where('repoName', '==', repoName)
+			.limit(1)
+			.get();
+		
+		const isIntro = draftsQuery.empty;
+		const defaultBranch = payload.repository?.default_branch || 'main';
 
 		const personaVoice = settings?.personaVoice || 'Write a general tech post.';
 		const geminiApiKey = settings?.geminiApiKey;
-		const repoUrl = payload.release?.html_url || payload.repository?.html_url || '';
+		const readmeImagePolicy = settings?.readmeImagePolicy || 'never';
+		const repoUrl = payload.repository?.html_url || '';
+
+		let readmeContent = "";
+		if (readmeImagePolicy === 'always' || (readmeImagePolicy === 'first' && isIntro)) {
+			console.log(`Fetching README for ${repoName} (policy: ${readmeImagePolicy}, isIntro: ${isIntro}, branch: ${defaultBranch})`);
+			try {
+				const userDocSnap = await db.doc(`users/${userId}`).get();
+				const githubAccessToken = userDocSnap.data()?.githubAccessToken;
+				if (githubAccessToken) {
+					const readmeResponse = await fetch(`https://api.github.com/repos/${repoName}/readme?ref=${defaultBranch}`, {
+						headers: {
+							Authorization: `Bearer ${githubAccessToken}`,
+							Accept: 'application/vnd.github.v3.raw'
+						}
+					});
+					if (readmeResponse.ok) {
+						readmeContent = await readmeResponse.text();
+						console.log(`Successfully fetched README for ${repoName}`);
+					} else {
+						console.error(`Failed to fetch README for ${repoName}: ${readmeResponse.statusText}`);
+					}
+				}
+			} catch (readmeError) {
+				console.error(`Error fetching README for ${repoName}:`, readmeError);
+			}
+		}
 
 		console.log(`Generating posts for ${repoName} ${version} | isIntro: ${isIntro} | isBatched: ${isBatched}`);
-		const generated = await generateSocialPosts(geminiApiKey, finalReleaseNotes, repoName, version, personaVoice, { isIntro, isBatched, repoUrl });
+		const generated = await generateSocialPosts(
+			geminiApiKey,
+			finalReleaseNotes,
+			repoName,
+			version,
+			personaVoice,
+			{ isIntro, isBatched, repoUrl, readmeContent, defaultBranch }
+		);
 
 		const draftData = {
 			repoName,
@@ -115,6 +152,7 @@ export const handleGithubRelease = onRequest({ secrets: ["X_API_KEY", "X_API_SEC
 			xPost: generated.xPost,
 			linkedinPost: generated.linkedinPost,
 			repoUrl,
+			defaultBranch,
 			extractedImage: generated.extractedImage,
 			availableImages: generated.availableImages,
 			xImageIndices: generated.availableImages.slice(0, 4).map((_, i) => i),

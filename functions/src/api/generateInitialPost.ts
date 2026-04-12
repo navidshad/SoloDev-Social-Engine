@@ -9,7 +9,7 @@ export const generateInitialPost = onCall({ cors: true }, async (request) => {
 	}
 
 	const uid = request.auth.uid;
-	const { repoName } = request.data;
+	const { repoName, readmeImagePolicy: passedPolicy } = request.data;
 
 	if (!repoName) {
 		throw new HttpsError("invalid-argument", "The repoName parameter is required.");
@@ -71,9 +71,45 @@ export const generateInitialPost = onCall({ cors: true }, async (request) => {
 		});
 
 		const latestVersion = sortedReleases[sortedReleases.length - 1].tag_name;
+		const readmeImagePolicy = passedPolicy || settingsData?.readmeImagePolicy || 'never';
+
+		// Fetch repo metadata to get default branch
+		let defaultBranch = 'main';
+		try {
+			const repoResponse = await fetch(`https://api.github.com/repos/${repoName}`, {
+				headers: {
+					Authorization: `Bearer ${githubAccessToken}`,
+					Accept: 'application/vnd.github.v3+json'
+				}
+			});
+			if (repoResponse.ok) {
+				const repoData = await repoResponse.json();
+				defaultBranch = repoData.default_branch || 'main';
+			}
+		} catch (err) {
+			console.error("Error fetching repo metadata:", err);
+		}
+
+		let readmeContent = "";
+		if (readmeImagePolicy === 'first' || readmeImagePolicy === 'always') {
+			try {
+				const readmeResponse = await fetch(`https://api.github.com/repos/${repoName}/readme?ref=${defaultBranch}`, {
+					headers: {
+						Authorization: `Bearer ${githubAccessToken}`,
+						Accept: 'application/vnd.github.v3.raw'
+					}
+				});
+				if (readmeResponse.ok) {
+					readmeContent = await readmeResponse.text();
+				}
+			} catch (err) {
+				console.error("Error fetching README:", err);
+			}
+		}
 
 		// Generate the post
-		const generated = await generateSocialPosts(geminiApiKey, finalReleaseNotes, repoName, latestVersion, personaVoice, { isIntro: true, isBatched: true });
+		const repoUrl = `https://github.com/${repoName}`;
+		const generated = await generateSocialPosts(geminiApiKey, finalReleaseNotes, repoName, latestVersion, personaVoice, { isIntro: true, isBatched: true, readmeContent, repoUrl, defaultBranch });
 
 		const draftData = {
 			repoName,
@@ -88,6 +124,8 @@ export const generateInitialPost = onCall({ cors: true }, async (request) => {
 			linkedinImageIndices: generated.availableImages.slice(0, 9).map((_, i) => i),
 			isIntro: true,
 			isBatched: true,
+			repoUrl,
+			defaultBranch,
 			status: 'Draft',
 			createdAt: admin.firestore.FieldValue.serverTimestamp(),
 		};

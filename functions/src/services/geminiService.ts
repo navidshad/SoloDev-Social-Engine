@@ -11,6 +11,13 @@ function stripMarkdown(text: string): string {
 		.trim();
 }
 
+interface ProcessOptions {
+	isIntro?: boolean;
+	isBatched?: boolean;
+	repoUrl?: string;
+	readmeContent?: string;
+	defaultBranch?: string;
+}
 
 export async function generateSocialPosts(
 	apiKey: string,
@@ -18,7 +25,7 @@ export async function generateSocialPosts(
 	repoName: string,
 	version: string,
 	personaVoice: string,
-	options: { isIntro?: boolean, isBatched?: boolean, repoUrl?: string } = {}
+	options: ProcessOptions = {}
 ) {
 	if (!apiKey) {
 		throw new Error("Gemini API Key is required.");
@@ -42,17 +49,19 @@ export async function generateSocialPosts(
 			generateLinkedInPost(ai, context)
 		]);
 
-		// Extract all unique markdown image URLs
-		const imageRegex = /!\[.*?\]\((.*?)\)/g;
-		const matches = Array.from(releaseNotes.matchAll(imageRegex));
-		const availableImages = [...new Set(matches.map(m => m[1]))].filter(url => url.startsWith('http'));
+		// Extract all unique images
+		const availableImages = [
+			...extractImages(releaseNotes, options.repoUrl, options.defaultBranch),
+			...(options.readmeContent ? extractImages(options.readmeContent, options.repoUrl, options.defaultBranch) : [])
+		];
+		
 		const extractedImage = availableImages.length > 0 ? availableImages[0] : null;
 
 		return {
 			xPost,
 			linkedinPost,
 			extractedImage,
-			availableImages
+			availableImages: [...new Set(availableImages)]
 		};
 	} catch (error) {
 		console.error("Error generating posts with Gemini", error);
@@ -168,4 +177,40 @@ Instructions:
 		console.error(`Error refining ${platform} post with Gemini`, error);
 		throw error;
 	}
+}
+
+function extractImages(content: string, repoUrl?: string, defaultBranch?: string): string[] {
+	const markdownImageRegex = /!\[.*?\]\((.*?)\)/g;
+	const htmlImageRegex = /<img.*?src=["'](.*?)["'].*?>/g;
+	const images: string[] = [];
+
+	const processImagePath = (path: string) => {
+		if (path.startsWith('http')) return path;
+		
+		if (repoUrl && repoUrl.includes('github.com')) {
+			// Extract owner/repo from URL to be safe
+			const match = repoUrl.match(/github\.com\/([^/]+\/[^/]+)/);
+			if (match) {
+				const fullRepo = match[1].replace(/\/$/, '');
+				const branch = defaultBranch || 'main';
+				const rawBase = `https://raw.githubusercontent.com/${fullRepo}/${branch}/`;
+				return rawBase + path.replace(/^\.\//, '').replace(/^\//, '');
+			}
+		}
+		
+		return path;
+	};
+
+	const matches = [...content.matchAll(markdownImageRegex), ...content.matchAll(htmlImageRegex)];
+	for (const m of matches) {
+		const processed = processImagePath(m[1]);
+		images.push(processed);
+	}
+
+	const finalImages = images.filter(img => img.startsWith('http'));
+	if (finalImages.length === 0 && content.length > 0) {
+		console.log(`extractImages: No valid images found in content (length: ${content.length}). Original matches: ${matches.map(m => m[1]).join(', ')}`);
+	}
+
+	return finalImages;
 }

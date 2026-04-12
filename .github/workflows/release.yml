@@ -9,15 +9,15 @@ jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-    # Avoid infinite loops by skipping if the commit was a release bump
+      contents: write # Needed to push tags and create releases
+    # Avoid infinite loops by skipping if the commit was an automated version bump
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # Fetch all history so we can extract commit logs since the last tag
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure Git
@@ -25,24 +25,106 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
+      - name: Get Recent Commits
+        id: commits
+        run: |
+          # 1. Ensure we have the full history and all tags locally
+          git fetch --prune --unshallow || true
+          git fetch --tags --force
+          
+          # 2. Identify the last release tag
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No previous tag found. Gathering all project history."
+            COMMITS=$(git log --pretty=format:"* %s")
+          else
+            echo "Found latest tag: $LATEST_TAG. Extracting changes since then."
+            # Extract commits between the last tag and the current HEAD
+            COMMITS=$(git log "$LATEST_TAG..HEAD" --pretty=format:"* %s")
+            
+            # 3. Fallback: If the range is empty (e.g. only includes the release commit), 
+            # get the last 20 commits to provide context for the AI.
+            if [ -z "$COMMITS" ] || [ $(echo "$COMMITS" | wc -l) -lt 2 ]; then
+              echo "Commit range too short. Falling back to last 20 commits for context."
+              COMMITS=$(git log -n 20 --pretty=format:"* %s")
+            fi
+          fi
+          
+          # 4. Save to a temporary file for Gemini to read
+          echo "$COMMITS" > commits.txt
+
       - name: Bump version and create tag
         id: version-bump
         run: |
-          # Increment patch version, create commit and tag
-          npm version patch -m "chore: release %s [skip ci]"
-          VERSION=$(node -p "require('./package.json').version")
+          # Detect if this is a manual release (commit message starts with "release:")
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          if [[ "$COMMIT_MSG" == release:* ]]; then
+            echo "Manual release detected. Using version from package.json."
+            VERSION=$(node -p "require('./package.json').version")
+            # Create tag manually
+            git tag "v$VERSION"
+          else
+            # Standard release: auto-increment patch version
+            npm version patch -m "chore: release %s [skip ci]"
+            VERSION=$(node -p "require('./package.json').version")
+          fi
           echo "version=v$VERSION" >> $GITHUB_OUTPUT
 
       - name: Push changes and tag
         run: |
+          # Push the version bump commit and the new tag
           git push origin main --follow-tags
+
+      - name: Get Project Context
+        id: context
+        run: |
+          # Extract project vision from README to help Gemini understand the project
+          if [ -f README.md ]; then
+            cat README.md > project_context.txt
+          else
+            echo "No README found" > project_context.txt
+          fi
+          # Initialize .gemini directory to prevent CLI state-saving errors
+          mkdir -p ~/.gemini
+
+      - name: Generate AI Release Notes
+        id: gemini-notes
+        uses: google-github-actions/run-gemini-cli@v0
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          gemini_model: gemini-2.5-flash
+          prompt: |
+            You are a technical writer specialized in software release notes.
+            
+            PROJECT CONTEXT (README):
+            $(cat project_context.txt)
+            
+            RELEASE VERSION: ${{ steps.version-bump.outputs.version }}
+            
+            COMMIT HISTORY:
+            $(cat commits.txt)
+            
+            INSTRUCTIONS:
+            1. Analyze the project context and commit history.
+            2. If the version is v1.0.0, start with an inspiring and celebratory introduction about the project and its mission.
+            3. Generate a professional, engaging summary of the new features, improvements, and fixes.
+            4. Group them logically (e.g., Features, Bug Fixes, Chores).
+            5. Keep it concise but informative.
+            
+            IMPORTANT: Return only the raw markdown content. Do not wrap the response in markdown code blocks.
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version-bump.outputs.version }}
           name: Release ${{ steps.version-bump.outputs.version }}
-          generate_release_notes: true
+          body: |
+            ${{ steps.gemini-notes.outputs.summary }}
+            
+            ---
+            
+          generate_release_notes: true # GitHub will append its own "What's Changed" list
           draft: false
           prerelease: false
         env:
