@@ -1,6 +1,6 @@
 # PilotUI - LLM Documentation
 
-> Generated on: 3/4/2026, 4:13:37 PM
+> Generated on: 4/11/2026, 2:42:59 PM
 
 ## 🤖 LLM Instructions
 This document is optimized for Large Language Models. It contains the complete documentation for **PilotUI**, a Vue 3 component library.
@@ -1667,7 +1667,7 @@ Add the official plugin and any icon sets you want to use as development depende
 
 ###### 2\. **Configure Tailwind to use the Iconify plugin:**
 
-Open your tailwind.config.js and import the plugin. Then add it to the plugins array, specifying which icon sets (by their prefix) to include if using the static selectors. For example:
+Open your tailwind.config.js and import the plugin. Then add it to the plugins array. For example:
 
 ```
 // tailwind.config.js
@@ -1694,15 +1694,15 @@ After setup, you can use Iconify icons in your Vue components just like using an
 
 ```
 <template>
-  <!-- Using the 'home' icon from Material Design Icons (mdi-light set) -->
-  <span class="icon-[mdi-light--home] text-gray-600 w-6 h-6"></span>
-  <icon name="icon-[mdi-light--home]" />
-  <Button iconName="icon-[mdi-light--home]" />
-  <IconButton iconName="icon-[mdi-light--home]" />
+  <!-- Using the 'hand-stop' icon from Tabler Icons (tabler set) -->
+  <span class="iconify tabler--hand-stop text-gray-600 w-6 h-6"></span>
+  <Icon name="iconify tabler--hand-stop" />
+  <Button iconName="iconify tabler--hand-stop" />
+  <IconButton iconName="iconify tabler--hand-stop" />
 </template>
 ```
 
-In the snippet above, the icon-\[mdi-light--home\] class inserts the mdi-light:home icon as an inline SVG. We also apply Tailwind utility classes for color and size. In this example, text-gray-600 sets the icon color (monotone icons inherit the text color), and w-6 h-6 gives it a fixed width and height. You can swap out the prefix and icon name to use any icon from Iconify’s library (just make sure you’ve installed the corresponding icon set).
+In the snippet above, the iconify tabler--hand-stop class inserts the tabler:hand-stop icon. We also apply Tailwind utility classes for color and size. In this example, text-gray-600 sets the icon color (monotone icons inherit the text color), and w-6 h-6 gives it a fixed width and height. You can swap out the prefix and icon name to use any icon from Iconify’s library (just make sure you’ve installed the corresponding icon set).
 
 For more details on using Iconify with Tailwind (and other setup options like additional icon sets or dynamic mode), refer to the official Iconify Tailwind CSS documentation.
 
