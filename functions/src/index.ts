@@ -13,5 +13,6 @@ import { regenerateDraft } from "./api/regenerateDraft";
 import { socialApi } from "./api/socialApi";
 import { listLinkedInOrganizations } from "./api/listLinkedInOrganizations";
 import { connectSocialAccount } from "./api/connectSocialAccount";
+import { linkedinOAuthStart, linkedinOAuthCallback, refreshLinkedInToken } from "./api/linkedinOAuth";
 
-export { handleGithubRelease, publishDraft, generateInitialPost, refineDraft, toggleRepoWebhook, testXCredentials, testLinkedInCredentials, regenerateDraft, socialApi, listLinkedInOrganizations, connectSocialAccount };
+export { handleGithubRelease, publishDraft, generateInitialPost, refineDraft, toggleRepoWebhook, testXCredentials, testLinkedInCredentials, regenerateDraft, socialApi, listLinkedInOrganizations, connectSocialAccount, linkedinOAuthStart, linkedinOAuthCallback, refreshLinkedInToken };

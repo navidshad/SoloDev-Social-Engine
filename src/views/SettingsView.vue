@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Modal } from 'pilotui/complex'
 import { Card } from 'pilotui/elements'
 import { Input, TextArea, CheckboxInput } from 'pilotui/form'
@@ -11,6 +12,8 @@ import { toastSuccess, toastError } from 'pilotui/toast'
 
 const authStore = useAuthStore()
 const db = getFirestore()
+const route = useRoute()
+const router = useRouter()
 
 const config = ref({
 	personaVoice: 'I write in a "build in public" style. I am humble but authoritative. I rarely use hashtags on X. I like to focus on the "why" behind the code. Use a conversational tone.',
@@ -151,6 +154,36 @@ watch([() => authStore.user?.uid, () => authStore.isGithubConnected], ([uid, isC
 	}
 }, { immediate: true })
 
+// Handle the redirect back from the LinkedIn OAuth callback.
+const handleLinkedInRedirect = async () => {
+	const status = route.query.linkedin
+	if (!status) return
+
+	if (status === 'connected') {
+		// The callback already wrote the tokens to the user doc; re-read the name.
+		let username: string | null = null
+		if (authStore.user?.uid) {
+			try {
+				const snap = await getDoc(doc(db, 'users', authStore.user.uid))
+				username = snap.data()?.linkedInUsername ?? null
+			} catch (err) {
+				console.error('Failed to re-read LinkedIn connection:', err)
+			}
+		}
+		authStore.setLinkedInConnected(true, username)
+		toastSuccess(`LinkedIn Account successfully connected${username ? ` as ${username}` : ''}!`)
+	} else if (status === 'error') {
+		const reason = typeof route.query.reason === 'string' ? route.query.reason : 'Unknown error'
+		toastError(`LinkedIn connection failed: ${reason}`)
+	}
+
+	// Clean the query params so a refresh doesn't re-trigger the toast.
+	const cleaned = { ...route.query }
+	delete cleaned.linkedin
+	delete cleaned.reason
+	router.replace({ query: cleaned })
+}
+
 onMounted(async () => {
 	if (authStore.user?.uid) {
 		const docRef = doc(db, `users/${authStore.user.uid}/settings`, 'config')
@@ -160,6 +193,7 @@ onMounted(async () => {
 		}
 		isLoaded.value = true
 	}
+	await handleLinkedInRedirect()
 })
 
 // Optional: watch user changes if component stays mounted while auth changes
@@ -282,6 +316,26 @@ const handleDisconnectX = async () => {
 const isLinkedInModalOpen = ref(false)
 const testingLinkedIn = ref(false)
 const linkedInToken = ref('')
+const connectingLinkedIn = ref(false)
+
+// Kick off the LinkedIn OAuth 2.0 "Connect with LinkedIn" flow.
+const connectWithLinkedIn = async () => {
+	connectingLinkedIn.value = true
+	try {
+		const functions = getFunctions()
+		const startFn = httpsCallable<{ includeOrgScopes?: boolean }, { authorizeUrl: string }>(functions, 'linkedinOAuthStart')
+		const result = await startFn({})
+		if (result.data?.authorizeUrl) {
+			window.location.href = result.data.authorizeUrl
+		} else {
+			throw new Error('Could not start LinkedIn authorization.')
+		}
+	} catch (error: any) {
+		console.error('Connect with LinkedIn failed:', error)
+		toastError(`Failed to start LinkedIn connection: ${error.message}`)
+		connectingLinkedIn.value = false
+	}
+}
 
 const handleTestAndSaveLinkedIn = async (toggleModal: (state: boolean) => void) => {
 	if (!authStore.user?.uid || !linkedInToken.value) return;
@@ -528,11 +582,18 @@ watch(() => authStore.user?.uid, (uid) => { if (uid) loadConnectedPages() }, { i
 							:disabled="testingLinkedIn" @click="handleDisconnectLinkedIn">{{
 								testingLinkedIn ? 'Disconnecting...' : 'Disconnect' }}</Button>
 
-						<Modal v-else v-model="isLinkedInModalOpen" title="Setup LinkedIn Account" size="lg">
-							<template #trigger="{ toggleModal }">
-								<Button variant="outline" size="sm" @click="toggleModal(true)">Setup LinkedIn</Button>
-							</template>
-							<template #default="{ toggleModal }">
+						<template v-else>
+							<Button variant="primary" size="sm" :disabled="connectingLinkedIn"
+								@click="connectWithLinkedIn">
+								{{ connectingLinkedIn ? 'Connecting...' : 'Connect with LinkedIn' }}
+							</Button>
+
+							<Modal v-model="isLinkedInModalOpen" title="Setup LinkedIn Account" size="lg">
+								<template #trigger="{ toggleModal }">
+									<Button variant="ghost" size="sm" @click="toggleModal(true)">or paste a token
+										manually</Button>
+								</template>
+								<template #default="{ toggleModal }">
 								<div class="space-y-4 pt-2">
 									<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 										To publish to LinkedIn, you need to provide an OAuth 2.0 Access Token. You can
@@ -558,6 +619,7 @@ watch(() => authStore.user?.uid, (uid) => { if (uid) loadConnectedPages() }, { i
 								</div>
 							</template>
 						</Modal>
+						</template>
 					</div>
 				</div>
 			</div>
