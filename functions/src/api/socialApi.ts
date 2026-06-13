@@ -5,39 +5,41 @@ import {
 	listSocialAccounts,
 	publishContent,
 } from "../services/accountsService";
+import { validateApiKey } from "../services/apiKeysService";
 import { publishToLinkedIn } from "../services/linkedinService";
 
 /**
  * Headless publishing API — the door an external agent (e.g. Aso) knocks on.
  *
- * Auth: a single shared secret in `PUBLISH_API_KEY`, sent as either
+ * Auth: an API key generated and revoked by the owner from the app dashboard
+ * (Settings → Headless API), sent as either
  *   Authorization: Bearer <key>   or   x-api-key: <key>
- * This is server-to-server (no Firebase Auth / browser login), so it does NOT
- * need CORS. The owning user is resolved the same way the GitHub webhook does
- * it (solo app → first user doc).
+ * Only the key's hash is stored, and the presented key is validated by an
+ * indexed hash lookup (no timing side-channel). This is server-to-server (no
+ * Firebase Auth / browser login), so it does NOT need CORS. The owning user is
+ * resolved the same way the GitHub webhook does it (solo app → first user doc).
  *
  * Routes (chosen by `action`):
  *   GET  ?action=accounts                      → list publishable accounts/pages
  *   POST { action:'publish', text, images?,    → create a draft + publish it
  *          asPdf?, accountId?, visibility? }
  */
-export const socialApi = onRequest({ secrets: ["PUBLISH_API_KEY"] }, async (req, res) => {
-	const expected = (process.env.PUBLISH_API_KEY || "").trim();
-	if (!expected) {
-		res.status(500).json({ success: false, error: "PUBLISH_API_KEY is not configured on the server." });
-		return;
-	}
-
+export const socialApi = onRequest(async (req, res) => {
 	const authHeader = req.get("authorization") || "";
 	const provided = (authHeader.replace(/^Bearer\s+/i, "").trim() || req.get("x-api-key") || "").trim();
-	if (!provided || provided !== expected) {
-		res.status(401).json({ success: false, error: "Unauthorized — missing or invalid API key." });
+	if (!provided) {
+		res.status(401).json({ success: false, error: "Unauthorized — missing API key." });
 		return;
 	}
 
 	try {
 		const db = admin.firestore();
 		const uid = await resolveOwnerUserId(db);
+
+		if (!(await validateApiKey(db, uid, provided))) {
+			res.status(401).json({ success: false, error: "Unauthorized — invalid or revoked API key." });
+			return;
+		}
 
 		const action =
 			(req.method === "GET" ? (req.query.action as string) : req.body?.action) ||
