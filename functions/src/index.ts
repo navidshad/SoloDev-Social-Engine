@@ -10,5 +10,8 @@ import { toggleRepoWebhook } from "./api/toggleRepoWebhook";
 import { testXCredentials } from "./api/testXCredentials";
 import { testLinkedInCredentials } from "./api/testLinkedInCredentials";
 import { regenerateDraft } from "./api/regenerateDraft";
+import { socialApi } from "./api/socialApi";
+import { listLinkedInOrganizations } from "./api/listLinkedInOrganizations";
+import { connectSocialAccount } from "./api/connectSocialAccount";
 
-export { handleGithubRelease, publishDraft, generateInitialPost, refineDraft, toggleRepoWebhook, testXCredentials, testLinkedInCredentials, regenerateDraft };
+export { handleGithubRelease, publishDraft, generateInitialPost, refineDraft, toggleRepoWebhook, testXCredentials, testLinkedInCredentials, regenerateDraft, socialApi, listLinkedInOrganizations, connectSocialAccount };

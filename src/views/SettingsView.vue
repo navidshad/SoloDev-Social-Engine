@@ -337,6 +337,84 @@ const handleDisconnectLinkedIn = async () => {
 		testingLinkedIn.value = false;
 	}
 }
+
+// --- LinkedIn Pages (organizations) ---
+interface ConnectedPage { id: string; displayName: string; urn: string; type: string }
+interface DiscoveredOrg { urn: string; organizationId: string; name: string }
+
+const connectedPages = ref<ConnectedPage[]>([])
+const discoveredOrgs = ref<DiscoveredOrg[]>([])
+const loadingPages = ref(false)
+const discoveringPages = ref(false)
+const hasDiscovered = ref(false)
+
+const loadConnectedPages = async () => {
+	if (!authStore.user?.uid) return
+	try {
+		const snap = await getDocs(collection(db, `users/${authStore.user.uid}/socialAccounts`))
+		const pages: ConnectedPage[] = []
+		snap.forEach(d => {
+			const data = d.data() as any
+			pages.push({ id: d.id, displayName: data.displayName || data.urn, urn: data.urn, type: data.type || 'organization' })
+		})
+		connectedPages.value = pages
+	} catch (err) {
+		console.error('Failed to load connected pages:', err)
+	}
+}
+
+const discoverPages = async () => {
+	if (!authStore.user?.uid) return
+	discoveringPages.value = true
+	try {
+		const functions = getFunctions()
+		const fn = httpsCallable<Record<string, never>, { success: boolean, organizations: DiscoveredOrg[] }>(functions, 'listLinkedInOrganizations')
+		const result = await fn({})
+		discoveredOrgs.value = result.data.organizations || []
+		hasDiscovered.value = true
+	} catch (err: any) {
+		console.error('Discover pages failed:', err)
+		toastError(err.message || 'Failed to list LinkedIn Pages.')
+	} finally {
+		discoveringPages.value = false
+	}
+}
+
+const connectPage = async (org: DiscoveredOrg) => {
+	if (!authStore.user?.uid) return
+	loadingPages.value = true
+	try {
+		const functions = getFunctions()
+		const fn = httpsCallable(functions, 'connectSocialAccount')
+		await fn({ type: 'organization', urn: org.urn, displayName: org.name, organizationId: org.organizationId })
+		toastSuccess(`Connected page "${org.name}".`)
+		await loadConnectedPages()
+	} catch (err: any) {
+		toastError(err.message || 'Failed to connect page.')
+	} finally {
+		loadingPages.value = false
+	}
+}
+
+const disconnectPage = async (page: ConnectedPage) => {
+	if (!authStore.user?.uid) return
+	loadingPages.value = true
+	try {
+		const functions = getFunctions()
+		const fn = httpsCallable(functions, 'connectSocialAccount')
+		await fn({ disconnectId: page.id })
+		toastSuccess(`Disconnected "${page.displayName}".`)
+		await loadConnectedPages()
+	} catch (err: any) {
+		toastError(err.message || 'Failed to disconnect page.')
+	} finally {
+		loadingPages.value = false
+	}
+}
+
+const isPageConnected = (urn: string) => connectedPages.value.some(p => p.urn === urn)
+
+watch(() => authStore.user?.uid, (uid) => { if (uid) loadConnectedPages() }, { immediate: true })
 </script>
 
 <template>
@@ -482,6 +560,63 @@ const handleDisconnectLinkedIn = async () => {
 						</Modal>
 					</div>
 				</div>
+			</div>
+		</Card>
+
+		<!-- LinkedIn Pages -->
+		<Card v-if="authStore.isLinkedInConnected">
+			<div class="p-6 space-y-4">
+				<div class="flex items-center justify-between gap-4">
+					<div class="space-y-1">
+						<h3 class="text-lg font-semibold dark:text-white">LinkedIn Pages</h3>
+						<p class="text-sm text-gray-500 dark:text-gray-400">
+							Connect company Pages you administer, so posts can be published as the Page instead of
+							your personal profile.
+						</p>
+					</div>
+					<Button variant="outline" size="sm" :disabled="discoveringPages" @click="discoverPages">
+						{{ discoveringPages ? 'Searching...' : 'Find Pages I manage' }}
+					</Button>
+				</div>
+
+				<!-- Connected pages -->
+				<div v-if="connectedPages.length" class="space-y-2">
+					<span class="text-xs font-bold text-gray-400 uppercase tracking-widest">Connected</span>
+					<div v-for="page in connectedPages" :key="page.id"
+						class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+						<div class="flex flex-col min-w-0">
+							<span class="text-sm font-medium dark:text-white truncate">{{ page.displayName }}</span>
+							<span class="text-[10px] text-gray-500 truncate">{{ page.urn }}</span>
+						</div>
+						<Button variant="outline" size="sm" :disabled="loadingPages" @click="disconnectPage(page)">
+							Disconnect</Button>
+					</div>
+				</div>
+
+				<!-- Discovered orgs -->
+				<div v-if="hasDiscovered" class="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+					<span class="text-xs font-bold text-gray-400 uppercase tracking-widest">Pages you manage</span>
+					<div v-if="discoveredOrgs.length === 0" class="text-sm text-gray-500 dark:text-gray-400 italic">
+						No Pages found. Your LinkedIn token needs the Community Management API scopes
+						(<code>r_organization_admin</code>, <code>w_organization_social</code>).
+					</div>
+					<div v-for="org in discoveredOrgs" :key="org.urn"
+						class="flex items-center justify-between p-3 bg-white dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50 rounded-xl">
+						<div class="flex flex-col min-w-0">
+							<span class="text-sm font-medium dark:text-gray-200 truncate">{{ org.name }}</span>
+							<span class="text-[10px] text-gray-500 truncate">{{ org.urn }}</span>
+						</div>
+						<Button v-if="isPageConnected(org.urn)" variant="ghost" size="sm" disabled>✓ Connected</Button>
+						<Button v-else variant="outline" size="sm" :disabled="loadingPages" @click="connectPage(org)">
+							Connect</Button>
+					</div>
+				</div>
+
+				<p class="text-[11px] text-gray-400 dark:text-gray-500 italic">
+					Posting to a Page requires your LinkedIn access token to include the
+					<code>w_organization_social</code> and <code>r_organization_admin</code> scopes (these need the
+					Community Management API product enabled on your LinkedIn app).
+				</p>
 			</div>
 		</Card>
 

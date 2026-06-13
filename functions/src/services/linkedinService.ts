@@ -5,8 +5,13 @@
  * @param token The LinkedIn OAuth Access Token.
  * @param urn The user's LinkedIn Person URN
  * @param asPdf If true, merges images into a PDF document for carousel-style posting.
+ * @param visibility "PUBLIC" (default) or "CONNECTIONS". Pages always render as PUBLIC.
+ *
+ * `urn` may be a person URN (urn:li:person:...) or an organization/page URN
+ * (urn:li:organization:...). The ugcPosts/documents flow is identical for both —
+ * the author and the upload owner are just set to whichever URN is passed.
  */
-export async function publishToLinkedIn(postText: string, imageUrls: string[] | null, token: string, urn: string, asPdf = false) {
+export async function publishToLinkedIn(postText: string, imageUrls: string[] | null, token: string, urn: string, asPdf = false, visibility: string = "PUBLIC") {
 	console.log("Publishing to LinkedIn...", asPdf ? "(as PDF carousel)" : "(as images)");
 	try {
 		if (!urn) {
@@ -15,7 +20,7 @@ export async function publishToLinkedIn(postText: string, imageUrls: string[] | 
 
 		// PDF Carousel path
 		if (asPdf && imageUrls && imageUrls.length > 0) {
-			return await publishAsDocumentPost(postText, imageUrls, token, urn);
+			return await publishAsDocumentPost(postText, imageUrls, token, urn, visibility);
 		}
 
 		// Standard image upload path
@@ -47,7 +52,7 @@ export async function publishToLinkedIn(postText: string, imageUrls: string[] | 
 				}
 			},
 			visibility: {
-				"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+				"com.linkedin.ugc.MemberNetworkVisibility": visibility === "CONNECTIONS" ? "CONNECTIONS" : "PUBLIC"
 			}
 		};
 
@@ -145,7 +150,7 @@ async function uploadLinkedInImage(imageUrl: string, token: string, ownerUrn: st
  * Publishes a post with a PDF document (carousel) to LinkedIn using the Documents API.
  * Flow: initializeUpload → upload binary → create post via /rest/posts
  */
-async function publishAsDocumentPost(postText: string, imageUrls: string[], token: string, urn: string) {
+async function publishAsDocumentPost(postText: string, imageUrls: string[], token: string, urn: string, visibility: string = "PUBLIC") {
 	console.log(`Building PDF from ${imageUrls.length} images for LinkedIn carousel...`);
 
 	// 1. Build PDF from images
@@ -211,7 +216,7 @@ async function publishAsDocumentPost(postText: string, imageUrls: string[], toke
 	const postData = {
 		author: urn,
 		commentary: postText,
-		visibility: "PUBLIC",
+		visibility: visibility === "CONNECTIONS" ? "CONNECTIONS" : "PUBLIC",
 		distribution: {
 			feedDistribution: "MAIN_FEED",
 			targetEntities: [],
