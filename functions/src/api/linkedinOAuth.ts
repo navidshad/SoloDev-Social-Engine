@@ -1,5 +1,6 @@
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
+import { randomUUID } from "node:crypto";
 
 /**
  * LinkedIn OAuth 2.0 "Connect with LinkedIn" (authorization-code) flow.
@@ -55,7 +56,7 @@ export const linkedinOAuthStart = onCall({ cors: true, secrets: LINKEDIN_SECRETS
 	const scopes = includeOrgScopes ? [...MEMBER_SCOPES, ...ORG_SCOPES] : MEMBER_SCOPES;
 
 	// Cryptographically-random state to protect against CSRF.
-	const state = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+	const state = randomUUID();
 
 	await admin.firestore().doc(`linkedinOauthStates/${state}`).set({
 		uid: request.auth.uid,
