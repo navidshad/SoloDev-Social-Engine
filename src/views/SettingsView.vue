@@ -347,6 +347,8 @@ const discoveredOrgs = ref<DiscoveredOrg[]>([])
 const loadingPages = ref(false)
 const discoveringPages = ref(false)
 const hasDiscovered = ref(false)
+const pagesError = ref<string | null>(null)
+const showPagesHelp = ref(false)
 
 const loadConnectedPages = async () => {
 	if (!authStore.user?.uid) return
@@ -366,6 +368,7 @@ const loadConnectedPages = async () => {
 const discoverPages = async () => {
 	if (!authStore.user?.uid) return
 	discoveringPages.value = true
+	pagesError.value = null
 	try {
 		const functions = getFunctions()
 		const fn = httpsCallable<Record<string, never>, { success: boolean, organizations: DiscoveredOrg[] }>(functions, 'listLinkedInOrganizations')
@@ -374,7 +377,12 @@ const discoverPages = async () => {
 		hasDiscovered.value = true
 	} catch (err: any) {
 		console.error('Discover pages failed:', err)
-		toastError(err.message || 'Failed to list LinkedIn Pages.')
+		pagesError.value = err.message || 'Failed to list LinkedIn Pages.'
+		// A 403/missing-scope is the common case — surface the how-to inline.
+		if (/403|r_organization_admin|Community Management|scope/i.test(pagesError.value || '')) {
+			showPagesHelp.value = true
+		}
+		toastError(pagesError.value || 'Failed to list LinkedIn Pages.')
 	} finally {
 		discoveringPages.value = false
 	}
@@ -593,28 +601,77 @@ watch(() => authStore.user?.uid, (uid) => { if (uid) loadApiKeys() }, { immediat
 						</div>
 					</div>
 					<div class="flex gap-2">
-						<Button v-if="authStore.isLinkedInConnected" variant="outline" size="sm"
-							:disabled="testingLinkedIn" @click="handleDisconnectLinkedIn">{{
-								testingLinkedIn ? 'Disconnecting...' : 'Disconnect' }}</Button>
-
-						<Modal v-else v-model="isLinkedInModalOpen" title="Setup LinkedIn Account" size="lg">
+						<Modal v-model="isLinkedInModalOpen"
+							:title="authStore.isLinkedInConnected ? 'Update LinkedIn token' : 'Setup LinkedIn account'"
+							size="lg">
 							<template #trigger="{ toggleModal }">
-								<Button variant="outline" size="sm" @click="toggleModal(true)">Setup LinkedIn</Button>
+								<Button variant="outline" size="sm" @click="toggleModal(true)">
+									{{ authStore.isLinkedInConnected ? 'Update token' : 'Setup LinkedIn' }}
+								</Button>
 							</template>
 							<template #default="{ toggleModal }">
-								<div class="space-y-4 pt-2">
-									<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-										To publish to LinkedIn, you need to provide an OAuth 2.0 Access Token. You can
-										generate one from the LinkedIn Developer Portal under your App's Auth -> Token
-										Generator. Make sure it has the `w_member_social`, `openid`, and `profile`
-										scopes.
-										<br /><br />
-										<i>Note: If you don't see `openid` and `profile` available, make sure you have
-											added
-											the "Sign In with LinkedIn" product to your app!</i>
+								<div class="space-y-5 pt-2">
+									<p class="text-sm text-gray-600 dark:text-gray-300">
+										Publishing uses an OAuth 2.0 access token you generate from your own LinkedIn
+										developer app. It takes about two minutes.
 									</p>
+
+									<!-- Required scopes -->
+									<div class="rounded-lg border border-blue-100 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800/40 p-3 text-sm">
+										<span class="font-semibold text-blue-900 dark:text-blue-200">Required scopes:</span>
+										<code class="mx-0.5">w_member_social</code>,
+										<code class="mx-0.5">openid</code>,
+										<code class="mx-0.5">profile</code>
+									</div>
+
+									<!-- Step-by-step -->
+									<ol class="space-y-3 text-sm text-gray-600 dark:text-gray-300">
+										<li class="flex gap-3">
+											<span class="flex-none flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 text-[11px] font-bold">1</span>
+											<span>
+												<span class="font-medium text-gray-900 dark:text-white">Add the products to your app.</span>
+												In the
+												<a href="https://www.linkedin.com/developers/apps" target="_blank" rel="noopener"
+													class="text-blue-600 dark:text-blue-400 hover:underline">LinkedIn Developer Portal</a>
+												→ your app → <b>Products</b>, add <b>Sign In with LinkedIn using OpenID Connect</b>
+												(gives <code>openid</code> + <code>profile</code>) and <b>Share on LinkedIn</b>
+												(gives <code>w_member_social</code>). Both are approved instantly.
+											</span>
+										</li>
+										<li class="flex gap-3">
+											<span class="flex-none flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 text-[11px] font-bold">2</span>
+											<span>
+												<span class="font-medium text-gray-900 dark:text-white">Open the token generator.</span>
+												Go to the
+												<a href="https://www.linkedin.com/developers/tools/oauth" target="_blank" rel="noopener"
+													class="text-blue-600 dark:text-blue-400 hover:underline">OAuth 2.0 Token Generator ↗</a>
+												and select your app.
+											</span>
+										</li>
+										<li class="flex gap-3">
+											<span class="flex-none flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 text-[11px] font-bold">3</span>
+											<span>
+												<span class="font-medium text-gray-900 dark:text-white">Tick the three scopes</span>
+												above, click <b>Request access token</b>, and authorize on the consent screen.
+											</span>
+										</li>
+										<li class="flex gap-3">
+											<span class="flex-none flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 text-[11px] font-bold">4</span>
+											<span>
+												<span class="font-medium text-gray-900 dark:text-white">Copy the token</span>
+												and paste it below, then <b>Test &amp; Save</b>.
+											</span>
+										</li>
+									</ol>
+
 									<Input v-model="linkedInToken" label="LinkedIn Access Token"
-										placeholder="Enter Access Token" type="password" />
+										placeholder="Paste your access token" type="password" />
+
+									<p class="text-[11px] text-gray-400 dark:text-gray-500 italic">
+										Tokens expire after ~2 months. When posting starts failing with a 401, generate a
+										fresh token and save it here again. To also post as a Company Page, see the
+										<b>LinkedIn Pages</b> section after connecting.
+									</p>
 
 									<div
 										class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
@@ -627,6 +684,9 @@ watch(() => authStore.user?.uid, (uid) => { if (uid) loadApiKeys() }, { immediat
 								</div>
 							</template>
 						</Modal>
+						<Button v-if="authStore.isLinkedInConnected" variant="outline" size="sm"
+							:disabled="testingLinkedIn" @click="handleDisconnectLinkedIn">{{
+								testingLinkedIn ? 'Disconnecting...' : 'Disconnect' }}</Button>
 					</div>
 				</div>
 			</div>
@@ -662,13 +722,20 @@ watch(() => authStore.user?.uid, (uid) => { if (uid) loadApiKeys() }, { immediat
 					</div>
 				</div>
 
+				<!-- Inline error (e.g. 403 missing scope) -->
+				<div v-if="pagesError"
+					class="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700/50 p-3 space-y-1">
+					<p class="text-sm font-semibold text-amber-800 dark:text-amber-300">Couldn't list your Pages</p>
+					<p class="text-xs text-amber-700/90 dark:text-amber-300/80 break-words">{{ pagesError }}</p>
+					<p class="text-xs text-amber-700/90 dark:text-amber-300/80">
+						This almost always means your token is missing the Page scopes — see the steps below.
+					</p>
+				</div>
+
 				<!-- Discovered orgs -->
-				<div v-if="hasDiscovered" class="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+				<div v-if="hasDiscovered && discoveredOrgs.length"
+					class="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-700">
 					<span class="text-xs font-bold text-gray-400 uppercase tracking-widest">Pages you manage</span>
-					<div v-if="discoveredOrgs.length === 0" class="text-sm text-gray-500 dark:text-gray-400 italic">
-						No Pages found. Your LinkedIn token needs the Community Management API scopes
-						(<code>r_organization_admin</code>, <code>w_organization_social</code>).
-					</div>
 					<div v-for="org in discoveredOrgs" :key="org.urn"
 						class="flex items-center justify-between p-3 bg-white dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50 rounded-xl">
 						<div class="flex flex-col min-w-0">
@@ -680,12 +747,66 @@ watch(() => authStore.user?.uid, (uid) => { if (uid) loadApiKeys() }, { immediat
 							Connect</Button>
 					</div>
 				</div>
+				<div v-else-if="hasDiscovered && !pagesError"
+					class="text-sm text-gray-500 dark:text-gray-400 italic pt-2">
+					No Pages found on this account. Make sure you're an <b>Administrator</b> of the Page on LinkedIn
+					(Page → Settings → Manage admins).
+				</div>
 
-				<p class="text-[11px] text-gray-400 dark:text-gray-500 italic">
-					Posting to a Page requires your LinkedIn access token to include the
-					<code>w_organization_social</code> and <code>r_organization_admin</code> scopes (these need the
-					Community Management API product enabled on your LinkedIn app).
-				</p>
+				<!-- How-to (toggleable) -->
+				<div class="pt-3 border-t border-gray-100 dark:border-gray-700">
+					<button type="button" @click="showPagesHelp = !showPagesHelp"
+						class="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline">
+						{{ showPagesHelp ? 'Hide setup steps' : 'How to enable Page posting' }}
+					</button>
+					<div v-if="showPagesHelp" class="mt-3 space-y-3 text-sm text-gray-600 dark:text-gray-300">
+						<p>
+							Posting as a Page needs two extra scopes —
+							<code>r_organization_admin</code> and <code>w_organization_social</code> — which only
+							become available after LinkedIn approves the
+							<b>Community Management API</b> product on your app.
+						</p>
+						<ol class="space-y-3">
+							<li class="flex gap-3">
+								<span class="flex-none flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 text-[11px] font-bold">1</span>
+								<span>
+									<span class="font-medium text-gray-900 dark:text-white">Request the product.</span>
+									In your
+									<a href="https://www.linkedin.com/developers/apps" target="_blank" rel="noopener"
+										class="text-blue-600 dark:text-blue-400 hover:underline">LinkedIn app</a>
+									→ <b>Products</b>, request <b>Community Management API</b>. LinkedIn reviews it — this
+									can take a few days and may ask about your use case.
+								</span>
+							</li>
+							<li class="flex gap-3">
+								<span class="flex-none flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 text-[11px] font-bold">2</span>
+								<span>
+									<span class="font-medium text-gray-900 dark:text-white">Be a Page admin.</span>
+									You must be an <b>Administrator</b> of the Page (not just a viewer) for it to appear.
+								</span>
+							</li>
+							<li class="flex gap-3">
+								<span class="flex-none flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 text-[11px] font-bold">3</span>
+								<span>
+									<span class="font-medium text-gray-900 dark:text-white">Regenerate your token</span>
+									in the
+									<a href="https://www.linkedin.com/developers/tools/oauth" target="_blank" rel="noopener"
+										class="text-blue-600 dark:text-blue-400 hover:underline">Token Generator ↗</a>
+									with <code>w_member_social</code>, <code>openid</code>, <code>profile</code>
+									<b>plus</b> <code>r_organization_admin</code> and <code>w_organization_social</code>.
+									Then <b>Disconnect</b> above and reconnect with the new token.
+								</span>
+							</li>
+							<li class="flex gap-3">
+								<span class="flex-none flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 text-[11px] font-bold">4</span>
+								<span>
+									<span class="font-medium text-gray-900 dark:text-white">Find Pages I manage</span>
+									again — your Page should now appear, ready to connect.
+								</span>
+							</li>
+						</ol>
+					</div>
+				</div>
 			</div>
 		</Card>
 
