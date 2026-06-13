@@ -5,8 +5,10 @@ import * as admin from "firebase-admin";
  * Connect (save) or disconnect a LinkedIn Page/account as a publish target.
  *
  * Connect:    { type: 'organization'|'person', urn, displayName, organizationId?, accessToken? }
- *             If accessToken is omitted, the user's stored personal LinkedIn token
- *             is reused (it must carry the w_organization_social scope to post to a Page).
+ *             If accessToken is omitted, the stored Pages token (linkedInOrgAccessToken,
+ *             from the user's Community Management API app) is used, falling back to the
+ *             personal token. The token is saved on the page doc, so each page posts with
+ *             its own credential.
  * Disconnect: { disconnectId: '<docId>' }   (the docId, with or without the "acct:" prefix)
  */
 export const connectSocialAccount = onCall({ cors: true }, async (request) => {
@@ -34,11 +36,12 @@ export const connectSocialAccount = onCall({ cors: true }, async (request) => {
 
 	let accessToken: string | undefined = request.data?.accessToken;
 	if (!accessToken) {
-		const userSnap = await db.doc(`users/${uid}`).get();
-		accessToken = userSnap.data()?.linkedInAccessToken;
+		const user = (await db.doc(`users/${uid}`).get()).data() || {};
+		// Prefer the dedicated Pages token for organizations; fall back to the personal token.
+		accessToken = user.linkedInOrgAccessToken || user.linkedInAccessToken;
 	}
 	if (!accessToken) {
-		throw new HttpsError("failed-precondition", "No access token available. Connect a personal LinkedIn account first or pass one.");
+		throw new HttpsError("failed-precondition", "No access token available. Add a LinkedIn Pages access token (or connect a personal LinkedIn account) first.");
 	}
 
 	const docRef = await db.collection(`users/${uid}/socialAccounts`).add({

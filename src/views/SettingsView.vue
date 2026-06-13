@@ -349,6 +349,9 @@ const discoveringPages = ref(false)
 const hasDiscovered = ref(false)
 const pagesError = ref<string | null>(null)
 const showPagesHelp = ref(false)
+const pagesTokenInput = ref('')
+const orgTokenSaved = ref(false)
+const savingOrgToken = ref(false)
 
 const loadConnectedPages = async () => {
 	if (!authStore.user?.uid) return
@@ -422,7 +425,54 @@ const disconnectPage = async (page: ConnectedPage) => {
 
 const isPageConnected = (urn: string) => connectedPages.value.some(p => p.urn === urn)
 
-watch(() => authStore.user?.uid, (uid) => { if (uid) loadConnectedPages() }, { immediate: true })
+// Dedicated Pages access token (from the Community Management API app), stored on the
+// user doc as `linkedInOrgAccessToken`. Discovery + page connection use it server-side.
+const loadOrgTokenState = async () => {
+	if (!authStore.user?.uid) return
+	try {
+		const snap = await getDoc(doc(db, 'users', authStore.user.uid))
+		orgTokenSaved.value = !!(snap.exists() && (snap.data() as any).linkedInOrgAccessToken)
+	} catch (err) {
+		console.error('Failed to load Pages token state:', err)
+	}
+}
+
+const saveOrgToken = async () => {
+	if (!authStore.user?.uid || !pagesTokenInput.value.trim()) return
+	savingOrgToken.value = true
+	try {
+		await setDoc(doc(db, 'users', authStore.user.uid), { linkedInOrgAccessToken: pagesTokenInput.value.trim() }, { merge: true })
+		orgTokenSaved.value = true
+		pagesTokenInput.value = ''
+		toastSuccess('Pages access token saved.')
+		await discoverPages()
+	} catch (err: any) {
+		toastError(err.message || 'Failed to save Pages token.')
+	} finally {
+		savingOrgToken.value = false
+	}
+}
+
+const removeOrgToken = async () => {
+	if (!authStore.user?.uid) return
+	if (!confirm('Remove the Pages access token? Already-connected Pages keep working, but you won\'t be able to discover or connect new ones until you add a token again.')) return
+	savingOrgToken.value = true
+	try {
+		const { updateDoc, deleteField } = await import('firebase/firestore')
+		await updateDoc(doc(db, 'users', authStore.user.uid), { linkedInOrgAccessToken: deleteField() })
+		orgTokenSaved.value = false
+		discoveredOrgs.value = []
+		hasDiscovered.value = false
+		pagesError.value = null
+		toastSuccess('Pages access token removed.')
+	} catch (err: any) {
+		toastError(err.message || 'Failed to remove Pages token.')
+	} finally {
+		savingOrgToken.value = false
+	}
+}
+
+watch(() => authStore.user?.uid, (uid) => { if (uid) { loadConnectedPages(); loadOrgTokenState() } }, { immediate: true })
 
 // --- Headless API keys ---
 interface ApiKeyMeta { id: string; label: string; keyHint: string; createdAt: number | null; lastUsedAt: number | null }
@@ -703,9 +753,38 @@ watch(() => authStore.user?.uid, (uid) => { if (uid) loadApiKeys() }, { immediat
 							your personal profile.
 						</p>
 					</div>
-					<Button variant="outline" size="sm" :disabled="discoveringPages" @click="discoverPages">
+					<Button variant="outline" size="sm" :disabled="discoveringPages || !orgTokenSaved"
+						@click="discoverPages">
 						{{ discoveringPages ? 'Searching...' : 'Find Pages I manage' }}
 					</Button>
+				</div>
+
+				<!-- Pages access token (Community Management API app) -->
+				<div class="rounded-lg border border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/40 p-3">
+					<div v-if="orgTokenSaved" class="flex items-center justify-between gap-3">
+						<span class="text-sm font-medium text-green-600 dark:text-green-400">
+							✓ Pages access token saved
+						</span>
+						<Button variant="ghost" size="sm" :disabled="savingOrgToken" @click="removeOrgToken">Remove</Button>
+					</div>
+					<div v-else class="space-y-2">
+						<p class="text-xs text-gray-500 dark:text-gray-400">
+							Posting as a Page uses a <b>separate</b> token from a Community Management API app —
+							not your personal token. Paste one with the <code>r_organization_admin</code> and
+							<code>w_organization_social</code> scopes. One token can manage every Page you administer.
+							See the setup steps below.
+						</p>
+						<div class="flex items-end gap-2">
+							<div class="flex-1">
+								<Input v-model="pagesTokenInput" label="LinkedIn Pages access token" type="password"
+									placeholder="Paste your Community Management token" />
+							</div>
+							<Button variant="primary" size="sm" :disabled="savingOrgToken || !pagesTokenInput"
+								@click="saveOrgToken">
+								{{ savingOrgToken ? 'Saving...' : 'Save & find Pages' }}
+							</Button>
+						</div>
+					</div>
 				</div>
 
 				<!-- Connected pages -->
@@ -762,20 +841,21 @@ watch(() => authStore.user?.uid, (uid) => { if (uid) loadApiKeys() }, { immediat
 					<div v-if="showPagesHelp" class="mt-3 space-y-3 text-sm text-gray-600 dark:text-gray-300">
 						<p>
 							Posting as a Page needs two extra scopes —
-							<code>r_organization_admin</code> and <code>w_organization_social</code> — which only
-							become available after LinkedIn approves the
-							<b>Community Management API</b> product on your app.
+							<code>r_organization_admin</code> and <code>w_organization_social</code> — from
+							LinkedIn's <b>Community Management API</b>. LinkedIn requires that product to be the
+							<b>only</b> product on an app, so it can't live alongside your personal sign-in app —
+							you need a <b>second, dedicated app</b> for Pages.
 						</p>
 						<ol class="space-y-3">
 							<li class="flex gap-3">
 								<span class="flex-none flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 text-[11px] font-bold">1</span>
 								<span>
-									<span class="font-medium text-gray-900 dark:text-white">Request the product.</span>
-									In your
+									<span class="font-medium text-gray-900 dark:text-white">Create a separate app.</span>
+									In the
 									<a href="https://www.linkedin.com/developers/apps" target="_blank" rel="noopener"
-										class="text-blue-600 dark:text-blue-400 hover:underline">LinkedIn app</a>
-									→ <b>Products</b>, request <b>Community Management API</b>. LinkedIn reviews it — this
-									can take a few days and may ask about your use case.
+										class="text-blue-600 dark:text-blue-400 hover:underline">LinkedIn Developer Portal</a>,
+									create a new app and request <b>Community Management API</b> as its only product.
+									LinkedIn reviews it — this can take a few days and may ask about your use case.
 								</span>
 							</li>
 							<li class="flex gap-3">
@@ -788,20 +868,19 @@ watch(() => authStore.user?.uid, (uid) => { if (uid) loadApiKeys() }, { immediat
 							<li class="flex gap-3">
 								<span class="flex-none flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 text-[11px] font-bold">3</span>
 								<span>
-									<span class="font-medium text-gray-900 dark:text-white">Regenerate your token</span>
-									in the
+									<span class="font-medium text-gray-900 dark:text-white">Generate a Pages token</span>
+									from that new app's
 									<a href="https://www.linkedin.com/developers/tools/oauth" target="_blank" rel="noopener"
 										class="text-blue-600 dark:text-blue-400 hover:underline">Token Generator ↗</a>
-									with <code>w_member_social</code>, <code>openid</code>, <code>profile</code>
-									<b>plus</b> <code>r_organization_admin</code> and <code>w_organization_social</code>.
-									Then <b>Disconnect</b> above and reconnect with the new token.
+									with <code>r_organization_admin</code> and <code>w_organization_social</code>.
 								</span>
 							</li>
 							<li class="flex gap-3">
 								<span class="flex-none flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 text-[11px] font-bold">4</span>
 								<span>
-									<span class="font-medium text-gray-900 dark:text-white">Find Pages I manage</span>
-									again — your Page should now appear, ready to connect.
+									<span class="font-medium text-gray-900 dark:text-white">Paste it above</span>
+									in the <b>LinkedIn Pages access token</b> field and click
+									<b>Save &amp; find Pages</b> — every Page you administer appears, ready to connect.
 								</span>
 							</li>
 						</ol>
