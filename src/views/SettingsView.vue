@@ -337,6 +337,153 @@ const handleDisconnectLinkedIn = async () => {
 		testingLinkedIn.value = false;
 	}
 }
+
+// --- LinkedIn Pages (organizations) ---
+interface ConnectedPage { id: string; displayName: string; urn: string; type: string }
+interface DiscoveredOrg { urn: string; organizationId: string; name: string }
+
+const connectedPages = ref<ConnectedPage[]>([])
+const discoveredOrgs = ref<DiscoveredOrg[]>([])
+const loadingPages = ref(false)
+const discoveringPages = ref(false)
+const hasDiscovered = ref(false)
+
+const loadConnectedPages = async () => {
+	if (!authStore.user?.uid) return
+	try {
+		const snap = await getDocs(collection(db, `users/${authStore.user.uid}/socialAccounts`))
+		const pages: ConnectedPage[] = []
+		snap.forEach(d => {
+			const data = d.data() as any
+			pages.push({ id: d.id, displayName: data.displayName || data.urn, urn: data.urn, type: data.type || 'organization' })
+		})
+		connectedPages.value = pages
+	} catch (err) {
+		console.error('Failed to load connected pages:', err)
+	}
+}
+
+const discoverPages = async () => {
+	if (!authStore.user?.uid) return
+	discoveringPages.value = true
+	try {
+		const functions = getFunctions()
+		const fn = httpsCallable<Record<string, never>, { success: boolean, organizations: DiscoveredOrg[] }>(functions, 'listLinkedInOrganizations')
+		const result = await fn({})
+		discoveredOrgs.value = result.data.organizations || []
+		hasDiscovered.value = true
+	} catch (err: any) {
+		console.error('Discover pages failed:', err)
+		toastError(err.message || 'Failed to list LinkedIn Pages.')
+	} finally {
+		discoveringPages.value = false
+	}
+}
+
+const connectPage = async (org: DiscoveredOrg) => {
+	if (!authStore.user?.uid) return
+	loadingPages.value = true
+	try {
+		const functions = getFunctions()
+		const fn = httpsCallable(functions, 'connectSocialAccount')
+		await fn({ type: 'organization', urn: org.urn, displayName: org.name, organizationId: org.organizationId })
+		toastSuccess(`Connected page "${org.name}".`)
+		await loadConnectedPages()
+	} catch (err: any) {
+		toastError(err.message || 'Failed to connect page.')
+	} finally {
+		loadingPages.value = false
+	}
+}
+
+const disconnectPage = async (page: ConnectedPage) => {
+	if (!authStore.user?.uid) return
+	loadingPages.value = true
+	try {
+		const functions = getFunctions()
+		const fn = httpsCallable(functions, 'connectSocialAccount')
+		await fn({ disconnectId: page.id })
+		toastSuccess(`Disconnected "${page.displayName}".`)
+		await loadConnectedPages()
+	} catch (err: any) {
+		toastError(err.message || 'Failed to disconnect page.')
+	} finally {
+		loadingPages.value = false
+	}
+}
+
+const isPageConnected = (urn: string) => connectedPages.value.some(p => p.urn === urn)
+
+watch(() => authStore.user?.uid, (uid) => { if (uid) loadConnectedPages() }, { immediate: true })
+
+// --- Headless API keys ---
+interface ApiKeyMeta { id: string; label: string; keyHint: string; createdAt: number | null; lastUsedAt: number | null }
+
+const apiKeys = ref<ApiKeyMeta[]>([])
+const loadingApiKeys = ref(false)
+const creatingApiKey = ref(false)
+const newKeyLabel = ref('')
+const newlyCreatedKey = ref<string | null>(null)
+
+const formatDate = (ms: number | null) => ms ? new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+
+const loadApiKeys = async () => {
+	if (!authStore.user?.uid) return
+	loadingApiKeys.value = true
+	try {
+		const fn = httpsCallable<{ action: string }, { success: boolean, keys: ApiKeyMeta[] }>(getFunctions(), 'manageApiKeys')
+		const result = await fn({ action: 'list' })
+		apiKeys.value = result.data.keys || []
+	} catch (err: any) {
+		console.error('Failed to load API keys:', err)
+		toastError(err.message || 'Failed to load API keys.')
+	} finally {
+		loadingApiKeys.value = false
+	}
+}
+
+const createApiKey = async () => {
+	if (!authStore.user?.uid) return
+	creatingApiKey.value = true
+	newlyCreatedKey.value = null
+	try {
+		const fn = httpsCallable<{ action: string, label?: string }, { success: boolean, key: string }>(getFunctions(), 'manageApiKeys')
+		const result = await fn({ action: 'create', label: newKeyLabel.value.trim() || undefined })
+		newlyCreatedKey.value = result.data.key
+		newKeyLabel.value = ''
+		await loadApiKeys()
+	} catch (err: any) {
+		toastError(err.message || 'Failed to create API key.')
+	} finally {
+		creatingApiKey.value = false
+	}
+}
+
+const revokeApiKey = async (key: ApiKeyMeta) => {
+	if (!authStore.user?.uid) return
+	if (!confirm(`Revoke "${key.label}"? Any integration using it will immediately stop working.`)) return
+	try {
+		const fn = httpsCallable(getFunctions(), 'manageApiKeys')
+		await fn({ action: 'revoke', id: key.id })
+		toastSuccess(`Revoked "${key.label}".`)
+		if (newlyCreatedKey.value && key.id) newlyCreatedKey.value = null
+		await loadApiKeys()
+	} catch (err: any) {
+		toastError(err.message || 'Failed to revoke API key.')
+	}
+}
+
+const copyNewKey = async () => {
+	if (!newlyCreatedKey.value) return
+	try {
+		await navigator.clipboard.writeText(newlyCreatedKey.value)
+		toastSuccess('API key copied to clipboard.')
+	} catch {
+		toastError('Could not copy — select and copy it manually.')
+	}
+}
+
+watch(() => authStore.user?.uid, (uid) => { if (uid) loadApiKeys() }, { immediate: true })
 </script>
 
 <template>
@@ -482,6 +629,118 @@ const handleDisconnectLinkedIn = async () => {
 						</Modal>
 					</div>
 				</div>
+			</div>
+		</Card>
+
+		<!-- LinkedIn Pages -->
+		<Card v-if="authStore.isLinkedInConnected">
+			<div class="p-6 space-y-4">
+				<div class="flex items-center justify-between gap-4">
+					<div class="space-y-1">
+						<h3 class="text-lg font-semibold dark:text-white">LinkedIn Pages</h3>
+						<p class="text-sm text-gray-500 dark:text-gray-400">
+							Connect company Pages you administer, so posts can be published as the Page instead of
+							your personal profile.
+						</p>
+					</div>
+					<Button variant="outline" size="sm" :disabled="discoveringPages" @click="discoverPages">
+						{{ discoveringPages ? 'Searching...' : 'Find Pages I manage' }}
+					</Button>
+				</div>
+
+				<!-- Connected pages -->
+				<div v-if="connectedPages.length" class="space-y-2">
+					<span class="text-xs font-bold text-gray-400 uppercase tracking-widest">Connected</span>
+					<div v-for="page in connectedPages" :key="page.id"
+						class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+						<div class="flex flex-col min-w-0">
+							<span class="text-sm font-medium dark:text-white truncate">{{ page.displayName }}</span>
+							<span class="text-[10px] text-gray-500 truncate">{{ page.urn }}</span>
+						</div>
+						<Button variant="outline" size="sm" :disabled="loadingPages" @click="disconnectPage(page)">
+							Disconnect</Button>
+					</div>
+				</div>
+
+				<!-- Discovered orgs -->
+				<div v-if="hasDiscovered" class="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+					<span class="text-xs font-bold text-gray-400 uppercase tracking-widest">Pages you manage</span>
+					<div v-if="discoveredOrgs.length === 0" class="text-sm text-gray-500 dark:text-gray-400 italic">
+						No Pages found. Your LinkedIn token needs the Community Management API scopes
+						(<code>r_organization_admin</code>, <code>w_organization_social</code>).
+					</div>
+					<div v-for="org in discoveredOrgs" :key="org.urn"
+						class="flex items-center justify-between p-3 bg-white dark:bg-gray-800/40 border border-gray-100 dark:border-gray-700/50 rounded-xl">
+						<div class="flex flex-col min-w-0">
+							<span class="text-sm font-medium dark:text-gray-200 truncate">{{ org.name }}</span>
+							<span class="text-[10px] text-gray-500 truncate">{{ org.urn }}</span>
+						</div>
+						<Button v-if="isPageConnected(org.urn)" variant="ghost" size="sm" disabled>✓ Connected</Button>
+						<Button v-else variant="outline" size="sm" :disabled="loadingPages" @click="connectPage(org)">
+							Connect</Button>
+					</div>
+				</div>
+
+				<p class="text-[11px] text-gray-400 dark:text-gray-500 italic">
+					Posting to a Page requires your LinkedIn access token to include the
+					<code>w_organization_social</code> and <code>r_organization_admin</code> scopes (these need the
+					Community Management API product enabled on your LinkedIn app).
+				</p>
+			</div>
+		</Card>
+
+		<!-- Headless API keys -->
+		<Card>
+			<div class="p-6 space-y-4">
+				<div class="space-y-1">
+					<h3 class="text-lg font-semibold dark:text-white">Headless API</h3>
+					<p class="text-sm text-gray-500 dark:text-gray-400">
+						Generate keys so an external agent can publish without a browser login. Send the key as
+						<code>Authorization: Bearer &lt;key&gt;</code> or <code>x-api-key</code>. Revoke a key any time —
+						it stops working immediately. Keys are stored hashed, so they're shown only once at creation.
+					</p>
+				</div>
+
+				<!-- Newly created key (shown once) -->
+				<div v-if="newlyCreatedKey"
+					class="p-4 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700/50 space-y-2">
+					<p class="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-widest">
+						Copy this key now — you won't see it again
+					</p>
+					<div class="flex items-center gap-2">
+						<code class="flex-1 min-w-0 truncate text-xs bg-white dark:bg-gray-800 rounded px-3 py-2 border border-amber-200 dark:border-amber-700/40">{{ newlyCreatedKey }}</code>
+						<Button variant="outline" size="sm" @click="copyNewKey">Copy</Button>
+						<Button variant="ghost" size="sm" @click="newlyCreatedKey = null">Done</Button>
+					</div>
+				</div>
+
+				<!-- Create new key -->
+				<div class="flex items-end gap-2">
+					<div class="flex-1">
+						<Input v-model="newKeyLabel" label="New key label (optional)" placeholder="e.g. Aso agent" />
+					</div>
+					<Button variant="primary" size="sm" :disabled="creatingApiKey" @click="createApiKey">
+						{{ creatingApiKey ? 'Generating...' : 'Generate key' }}
+					</Button>
+				</div>
+
+				<!-- Existing keys -->
+				<div v-if="apiKeys.length" class="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+					<span class="text-xs font-bold text-gray-400 uppercase tracking-widest">Active keys</span>
+					<div v-for="key in apiKeys" :key="key.id"
+						class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg gap-3">
+						<div class="flex flex-col min-w-0">
+							<span class="text-sm font-medium dark:text-white truncate">{{ key.label }}</span>
+							<span class="text-[11px] text-gray-500 truncate">
+								<code>{{ key.keyHint }}</code> · created {{ formatDate(key.createdAt) }} · last used {{ formatDate(key.lastUsedAt) }}
+							</span>
+						</div>
+						<Button variant="outline" size="sm" @click="revokeApiKey(key)">Revoke</Button>
+					</div>
+				</div>
+				<p v-else-if="!loadingApiKeys" class="text-sm text-gray-500 dark:text-gray-400 italic">
+					No API keys yet. Generate one to enable headless publishing.
+				</p>
 			</div>
 		</Card>
 
