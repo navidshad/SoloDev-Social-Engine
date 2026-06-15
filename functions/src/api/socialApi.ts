@@ -20,9 +20,12 @@ import { publishToLinkedIn } from "../services/linkedinService";
  * resolved the same way the GitHub webhook does it (solo app → first user doc).
  *
  * Routes (chosen by `action`):
- *   GET  ?action=accounts                      → list publishable accounts/pages
- *   POST { action:'publish', text, images?,    → create a draft + publish it
- *          asPdf?, accountId?, visibility? }
+ *   GET  ?action=accounts                          → list publishable accounts/pages
+ *   POST { action:'publish', text, images?, asPdf?, → create a draft + publish it
+ *          pdfUrl?, accountId?, visibility? }
+ *
+ * `pdfUrl` posts a ready-made PDF as a document (uploaded as-is). `asPdf:true` with
+ * `images` builds a PDF carousel from the images instead.
  */
 export const socialApi = onRequest(async (req, res) => {
 	const authHeader = req.get("authorization") || "";
@@ -56,14 +59,14 @@ export const socialApi = onRequest(async (req, res) => {
 				res.status(405).json({ success: false, error: "publish requires POST." });
 				return;
 			}
-			const { text, images, asPdf, accountId, visibility, platform } = req.body || {};
+			const { text, images, asPdf, pdfUrl, accountId, visibility, platform } = req.body || {};
 			if (!text || !String(text).trim()) {
 				res.status(400).json({ success: false, error: "`text` is required." });
 				return;
 			}
 			const result = await publishContent(
 				uid,
-				{ text, images, asPdf, accountId, visibility, platform },
+				{ text, images, asPdf, pdfUrl, accountId, visibility, platform },
 				publishToLinkedIn,
 			);
 			res.status(200).json(result);

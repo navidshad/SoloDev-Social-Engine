@@ -1,24 +1,33 @@
 /**
- * Publishes a post to LinkedIn with support for multiple images or a PDF carousel.
+ * Publishes a post to LinkedIn with support for multiple images, an images→PDF
+ * carousel, or a ready-made PDF document.
  * @param postText The text content of the post.
  * @param imageUrls (Optional) The URLs of the images to attach.
  * @param token The LinkedIn OAuth Access Token.
  * @param urn The user's LinkedIn Person URN
- * @param asPdf If true, merges images into a PDF document for carousel-style posting.
+ * @param asPdf If true, merges `imageUrls` into a PDF document for carousel-style posting.
  * @param visibility "PUBLIC" (default) or "CONNECTIONS". Pages always render as PUBLIC.
+ * @param pdfUrl (Optional) URL of an already-built PDF to post as a document. Takes
+ *        precedence over `asPdf`/images — the PDF is uploaded as-is (no image→PDF build).
  *
  * `urn` may be a person URN (urn:li:person:...) or an organization/page URN
  * (urn:li:organization:...). The ugcPosts/documents flow is identical for both —
  * the author and the upload owner are just set to whichever URN is passed.
  */
-export async function publishToLinkedIn(postText: string, imageUrls: string[] | null, token: string, urn: string, asPdf = false, visibility: string = "PUBLIC") {
-	console.log("Publishing to LinkedIn...", asPdf ? "(as PDF carousel)" : "(as images)");
+export async function publishToLinkedIn(postText: string, imageUrls: string[] | null, token: string, urn: string, asPdf = false, visibility: string = "PUBLIC", pdfUrl?: string) {
+	console.log("Publishing to LinkedIn...", pdfUrl ? "(as PDF document)" : asPdf ? "(as PDF carousel)" : "(as images)");
 	try {
 		if (!urn) {
 			throw new Error("Missing LinkedIn User URN required for publishing.");
 		}
 
-		// PDF Carousel path
+		// Ready-made PDF document path — upload the PDF as-is.
+		if (pdfUrl) {
+			const pdfBuffer = await fetchPdfBuffer(pdfUrl);
+			return await uploadAndPostDocument(postText, pdfBuffer, token, urn, visibility);
+		}
+
+		// PDF Carousel path (build a PDF from images)
 		if (asPdf && imageUrls && imageUrls.length > 0) {
 			return await publishAsDocumentPost(postText, imageUrls, token, urn, visibility);
 		}
@@ -147,13 +156,11 @@ async function uploadLinkedInImage(imageUrl: string, token: string, ownerUrn: st
 }
 
 /**
- * Publishes a post with a PDF document (carousel) to LinkedIn using the Documents API.
- * Flow: initializeUpload → upload binary → create post via /rest/posts
+ * Builds a PDF from images and posts it to LinkedIn as a document (carousel).
  */
 async function publishAsDocumentPost(postText: string, imageUrls: string[], token: string, urn: string, visibility: string = "PUBLIC") {
 	console.log(`Building PDF from ${imageUrls.length} images for LinkedIn carousel...`);
 
-	// 1. Build PDF from images
 	let pdfBuffer: Uint8Array;
 	try {
 		pdfBuffer = await buildPdfFromImages(imageUrls);
@@ -163,9 +170,38 @@ async function publishAsDocumentPost(postText: string, imageUrls: string[], toke
 		throw new Error(`PDF generation failed: ${err.message}`);
 	}
 
+	return await uploadAndPostDocument(postText, pdfBuffer, token, urn, visibility);
+}
+
+/**
+ * Downloads a PDF from a URL and validates it really is a PDF (by magic bytes /
+ * content-type) before LinkedIn ever sees it.
+ */
+async function fetchPdfBuffer(pdfUrl: string): Promise<Uint8Array> {
+	console.log(`Fetching PDF document: ${pdfUrl}`);
+	const res = await fetch(pdfUrl);
+	if (!res.ok) {
+		throw new Error(`Failed to fetch PDF (${res.status}) from ${pdfUrl}`);
+	}
+	const bytes = new Uint8Array(await res.arrayBuffer());
+	// %PDF magic bytes
+	const isPdf = bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
+	const contentType = res.headers.get("content-type") || "";
+	if (!isPdf && !contentType.includes("application/pdf")) {
+		throw new Error(`The URL did not return a PDF (content-type: ${contentType || "unknown"}). Pass a direct link to a .pdf file.`);
+	}
+	console.log(`PDF fetched. Size: ${bytes.byteLength} bytes`);
+	return bytes;
+}
+
+/**
+ * Uploads a PDF buffer to LinkedIn and creates the document post using the Documents API.
+ * Flow: initializeUpload → upload binary → create post via /rest/posts
+ */
+async function uploadAndPostDocument(postText: string, pdfBuffer: Uint8Array, token: string, urn: string, visibility: string = "PUBLIC") {
 	const linkedinVersion = "202504";
 
-	// 2. Initialize document upload via Documents API
+	// 1. Initialize document upload via Documents API
 	const initBody = {
 		initializeUploadRequest: {
 			owner: urn
@@ -194,7 +230,7 @@ async function publishAsDocumentPost(postText: string, imageUrls: string[], toke
 	const documentUrn = initData.value.document;
 	console.log("Document upload initialized. URN:", documentUrn);
 
-	// 3. Upload PDF binary via PUT
+	// 2. Upload PDF binary via PUT
 	const uploadRes = await fetch(uploadUrl, {
 		method: 'PUT',
 		headers: {
@@ -212,7 +248,7 @@ async function publishAsDocumentPost(postText: string, imageUrls: string[], toke
 
 	console.log("PDF uploaded successfully. Document:", documentUrn);
 
-	// 4. Create the document post via /rest/posts
+	// 3. Create the document post via /rest/posts
 	const postData = {
 		author: urn,
 		commentary: postText,
@@ -224,7 +260,7 @@ async function publishAsDocumentPost(postText: string, imageUrls: string[], toke
 		},
 		content: {
 			media: {
-				title: "Release Carousel",
+				title: "Document",
 				id: documentUrn
 			}
 		},
@@ -245,13 +281,13 @@ async function publishAsDocumentPost(postText: string, imageUrls: string[], toke
 
 	if (!shareResponse.ok) {
 		const errorText = await shareResponse.text();
-		console.error("Failed to publish PDF carousel to LinkedIn:", errorText);
-		throw new Error(`Failed to publish PDF carousel to LinkedIn (${shareResponse.status}): ${errorText}`);
+		console.error("Failed to publish PDF document to LinkedIn:", errorText);
+		throw new Error(`Failed to publish PDF document to LinkedIn (${shareResponse.status}): ${errorText}`);
 	}
 
 	// The Posts API returns 201 with post ID in x-restli-id header
 	const postId = shareResponse.headers.get('x-restli-id') || 'unknown';
-	console.log("Successfully published PDF carousel to LinkedIn. Post ID:", postId);
+	console.log("Successfully published PDF document to LinkedIn. Post ID:", postId);
 
 	return { success: true, platform: 'linkedin', id: postId };
 }

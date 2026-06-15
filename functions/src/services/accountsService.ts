@@ -198,6 +198,7 @@ export async function publishContent(
 		text: string;
 		images?: string[];
 		asPdf?: boolean;
+		pdfUrl?: string;
 		accountId?: string;
 		visibility?: string;
 		platform?: string;
@@ -209,6 +210,7 @@ export async function publishContent(
 		urn: string,
 		asPdf?: boolean,
 		visibility?: string,
+		pdfUrl?: string,
 	) => Promise<{ success: boolean; platform: string; id: string }>,
 ): Promise<any> {
 	const platform = (opts.platform || "linkedin").toLowerCase();
@@ -220,7 +222,9 @@ export async function publishContent(
 	if (!text) throw new Error("`text` is required and was empty.");
 
 	const images = Array.isArray(opts.images) ? opts.images.filter((u) => typeof u === "string" && u) : [];
-	const asPdf = !!opts.asPdf;
+	const pdfUrl = typeof opts.pdfUrl === "string" && opts.pdfUrl.trim() ? opts.pdfUrl.trim() : undefined;
+	// A supplied PDF is itself a document post; otherwise honour the asPdf (images→PDF) flag.
+	const asPdf = !!pdfUrl || !!opts.asPdf;
 	const visibility = String(opts.visibility || "PUBLIC").toUpperCase();
 
 	const db = admin.firestore();
@@ -232,6 +236,7 @@ export async function publishContent(
 		availableImages: images,
 		linkedinImageIndices: images.map((_, i) => i).slice(0, 9),
 		linkedinAsPdf: asPdf,
+		linkedinPdfUrl: pdfUrl || null,
 		targetAccountId: account.id,
 		targetUrn: account.urn,
 		targetDisplayName: account.displayName,
@@ -240,7 +245,7 @@ export async function publishContent(
 	});
 
 	try {
-		const result = await publishToLinkedIn(text, images, account.accessToken, account.urn, asPdf, visibility);
+		const result = await publishToLinkedIn(text, images, account.accessToken, account.urn, asPdf, visibility, pdfUrl);
 		await draftRef.update({
 			status: "Published",
 			linkedinPostId: result.id,
